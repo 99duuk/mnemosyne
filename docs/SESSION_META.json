@@ -1,0 +1,23 @@
+{
+  "session_id": "019f5863-8c7a-77b3-9226-cd8b2bf11c47",
+  "source_platform": "Codex",
+  "first_message_at": "2026-07-12T22:12:32.581Z",
+  "last_message_at": "2026-08-21T01:17:01.771Z",
+  "exported_at": "2026-08-21T10:18:16+09:00",
+  "message_count": 131,
+  "user_message_count": 21,
+  "assistant_message_count": 110,
+  "sanitization": {
+    "included": [
+      "user-visible user messages",
+      "user-visible assistant commentary/final messages"
+    ],
+    "excluded": [
+      "system/developer messages",
+      "internal context",
+      "tool calls and tool outputs",
+      "transport metadata",
+      "credentials"
+    ]
+  }
+}
