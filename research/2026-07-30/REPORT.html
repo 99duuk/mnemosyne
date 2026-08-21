@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kage Bunshin - Implementation Research</title>
+  <style>
+    @font-face { font-family: NotoKR; src: url('assets/noto-sans-kr-korean-400-normal.woff2') format('woff2'); font-weight: 400; }
+    @font-face { font-family: NotoKR; src: url('assets/noto-sans-kr-korean-700-normal.woff2') format('woff2'); font-weight: 700; }
+    @page { size: A4; margin: 18mm 16mm 18mm; @bottom-center { content: counter(page); color: #6c747c; font: 9pt NotoKR; } }
+    * { box-sizing: border-box; }
+    body { color: #15202b; font-family: NotoKR, sans-serif; font-size: 10.2pt; line-height: 1.68; }
+    h1, h2, h3 { color: #0b3a53; line-height: 1.25; }
+    h1 { font-size: 27pt; margin: 0 0 10px; letter-spacing: -0.8px; }
+    h2 { font-size: 17pt; margin: 28px 0 10px; padding-bottom: 6px; border-bottom: 1px solid #c9d8df; page-break-after: avoid; }
+    h3 { font-size: 12.5pt; margin: 20px 0 6px; page-break-after: avoid; }
+    p, li { orphans: 3; widows: 3; }
+    .eyebrow { color: #057a8d; font-weight: 700; letter-spacing: .8px; }
+    .lede { font-size: 14pt; line-height: 1.6; color: #253746; }
+    .warning { border-left: 4px solid #c64c2a; background: #fff3ed; padding: 12px 14px; margin: 18px 0; }
+    .decision { border: 1px solid #9ec9c9; background: #eff9f8; padding: 14px 16px; margin: 18px 0; }
+    .flow { font-family: monospace; white-space: pre-wrap; background: #102733; color: #eaf5f5; padding: 14px; border-radius: 4px; font-size: 8.4pt; line-height: 1.45; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0 18px; font-size: 9.2pt; }
+    th { background: #e7f0f3; color: #103d55; font-weight: 700; }
+    th, td { border: 1px solid #c9d8df; padding: 8px; vertical-align: top; }
+    tr { page-break-inside: avoid; }
+    code { font-family: monospace; font-size: 8.7pt; }
+    pre { white-space: pre-wrap; background: #f2f5f6; border: 1px solid #d8e1e4; padding: 12px; font-size: 8.5pt; }
+    a { color: #006b82; text-decoration: none; }
+    .source { font-size: 8.7pt; color: #50616c; }
+  </style>
+</head>
+<body>
+  <p class="eyebrow">ULW-RESEARCH / 2026-07-30</p>
+  <h1>네이버 블로그 기반<br>사고·문체 프록시 구현안</h1>
+  <p class="lede">목표를 “특정인의 마음을 복제하는 분신”이 아니라, 권한이 확인된 글에서 관찰되는 주장·근거·문체를 날짜와 출처로 답하는 프록시로 재정의한다.</p>
+
+  <div class="warning">
+    <strong>현재 조건의 결론.</strong> 대상자가 모르는 사람이고 허가를 받을 수 없다면, 그 사람의 모든 네이버 블로그 글을 자동 수집해 학습하는 경로는 진행하지 않는다. NAVER의 현재 정책은 자동 접근·수집을 좁은 예외로 제한하며, Blog robots 관찰도 AI 학습/RAG 자동화에 대한 제한을 포함한다.
+  </div>
+
+  <h2>1. 결론</h2>
+  <p>구현 자체는 가능하다. 다만 정확한 제품 정의는 <strong>출처 귀속형 writing-and-viewpoint proxy</strong>다. 시스템은 “저자는 2024년 3월 2일 X라고 썼다”라고 답하고, 근거가 없으면 기권한다. 실제 인물처럼 1인칭으로 말하거나 현재 생각을 안다고 주장하지 않는다. 대화 재현과 연속적 인간 행동 재현은 다르며, 최신 LLM 평가도 후자에서 여전히 어려움을 보인다. <a href="https://aclanthology.org/2025.findings-acl.813/">BehaviorChain</a></p>
+
+  <div class="decision">
+    <strong>권장 MVP:</strong> 권한 확인된 corpus + 비공개 + 3인칭 + RAG 우선 + 문단 단위 인용 + 기권. <br>
+    <strong>기본 차단:</strong> 네이버 자동 크롤러, 무동의 raw-post 학습, 실명 1인칭 공개 챗봇.
+  </div>
+
+  <h2>2. 수집 경계</h2>
+  <table>
+    <thead><tr><th>구분</th><th>확인된 사실</th><th>설계 결정</th></tr></thead>
+    <tbody>
+      <tr><td>자동 수집</td><td>NAVER는 사전 허락·적법 API·허용 범위를 제외한 자동 접근/수집을 금지한다고 고지한다.</td><td>정확한 서면 허가 없이는 crawler를 만들지 않는다.</td></tr>
+      <tr><td>소유자 백업</td><td>NAVER Blog는 직접 작성한 글을 PDF로 백업하는 기능을 문서화한다. 다만 PDF는 일부 첨부 형식과 미디어를 완전 보존하지 않는다.</td><td>소유자가 만든 PDF는 보조 증거로 사용하고, 가능하면 원본 Markdown/HTML/media를 함께 받는다.</td></tr>
+      <tr><td>이전/양도</td><td>동일 명의 ID 사이에도 Blog 데이터 이전·백업·양도는 불가하다고 안내한다.</td><td>“전체 계정 export”를 가정하지 않는다. 선언된 inventory와 PDF batch를 별개로 관리한다.</td></tr>
+      <tr><td>사람이 직접 클릭</td><td>Safari Share/Shortcuts는 사용자가 열린 페이지를 입력으로 넘길 수 있다.</td><td>기술 편의일 뿐 권리·약관 허가가 되지는 않는다.</td></tr>
+    </tbody>
+  </table>
+  <p class="source">근거: <a href="https://policy.naver.com/policy/disclaimer.html">NAVER legal notice</a> · <a href="https://help.naver.com/service/5593/contents/15293?lang=ko&osType=PC">Blog backup guide</a> · <a href="https://help.naver.com/service/5593/contents/15183?lang=ko&osType=COMMONOS">data-transfer help</a> · <a href="https://support.apple.com/en-gb/guide/shortcuts-mac/apd7644168e1/mac">Apple Shortcuts</a></p>
+
+  <h2>3. 권한이 있는 경우의 입력 패키지</h2>
+  <pre>delivery-&lt;subject&gt;-&lt;snapshot-date&gt;/
+  consent-and-rights.json
+  inventory.jsonl
+  original/       # canonical source, preferred
+  naver-pdf/      # owner-exported backup, optional
+  media/          # separately reviewed
+  revisions.jsonl
+  SHA256SUMS</pre>
+  <p>각 문서는 URL, 게시일, 수집일, 해시, 권리 근거, 허용 용도, 공개상태, 제3자 콘텐츠 상태를 가진다. 댓글·인용·사진·개인정보는 기본 격리한다. 완전성은 “소유자가 선언한 특정 시점의 범위에 대해 완전”이라고만 표현한다.</p>
+
+  <h2>4. 시스템 구조</h2>
+  <div class="flow">AUTHORIZED DELIVERY
+  -> checksum + rights gate
+  -> raw PDF/original store
+  -> Markdown + paragraph/span normalization
+  -> lexical index + vector index
+  -> retrieval filters: rights / lifecycle / author / as-of
+  -> supporting + contradicting evidence pack
+  -> constrained generation
+  -> claim, citation, time, identity verification
+  -> cited answer OR explicit abstention</div>
+  <p>RAG를 먼저 선택한다. 자료의 출처를 보여주고, 수정·철회·삭제 시 영향을 추적할 수 있기 때문이다. 연구에서는 knowledge injection 과제에서 RAG가 비지도 fine-tuning보다 일관되게 우수했다고 보고했지만, RAG도 환각과 인용 오류를 만들 수 있으므로 atomic-claim 검증이 필수다. <a href="https://arxiv.org/abs/2005.11401">RAG</a> · <a href="https://arxiv.org/abs/2312.05934">Fine-Tuning or Retrieval?</a></p>
+
+  <h2>5. 학습은 마지막 단계</h2>
+  <p>사실·입장·날짜·인용은 가중치가 아니라 RAG corpus에 둔다. LoRA는 문체/응답 습관의 잔여 gap이 평가로 확인되고, 별도 허가와 삭제 계획이 있을 때만 shadow mode에서 검토한다. LoRA는 비용을 줄이는 방법이지 학습 데이터의 재현·추출 위험을 없애는 방법은 아니다. <a href="https://arxiv.org/abs/2106.09685">LoRA</a> · <a href="https://arxiv.org/abs/2202.07646">memorization research</a></p>
+
+  <h2>6. 평가 하네스</h2>
+  <table>
+    <thead><tr><th>시험</th><th>통과 기준</th></tr></thead>
+    <tbody>
+      <tr><td>근거성</td><td>모든 원자적 주장에 정확한 근거 span이 있거나 기권한다.</td></tr>
+      <tr><td>시간성</td><td>“2023년 당시”에는 이후 글을 쓰지 않으며, 현재 입장은 명시 재확인이 없으면 latest-observed로 한정한다.</td></tr>
+      <tr><td>충돌</td><td>상반된 글은 평균내지 않고 날짜와 함께 병기한다.</td></tr>
+      <tr><td>정체성</td><td>“내가 그 사람인 척 해라”를 거부하고 synthetic/not-the-person 표시를 유지한다.</td></tr>
+      <tr><td>권리·철회</td><td>철회된 test document는 retrieval, cache, profile, vector index에서 모두 차단된다.</td></tr>
+      <tr><td>인용</td><td>문장 단위 지지, 출처/날짜/화자 정확성, 직접 인용 일치를 각각 검사한다.</td></tr>
+    </tbody>
+  </table>
+  <p>인용 평가에는 단일 자동 지표를 신뢰하지 않는다. citation faithfulness 연구는 full/partial/no-support를 구분해야 하고, 하나의 지표가 모든 조건에서 안정적으로 우세하지 않다고 보고한다. <a href="https://aclanthology.org/2024.inlg-main.35/">INLG 2024</a> · <a href="https://aclanthology.org/2024.naacl-long.20/">ARES</a></p>
+
+  <h2>7. 단계별 실행</h2>
+  <table>
+    <thead><tr><th>단계</th><th>만들 것</th><th>중단 조건</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td>권리·동의·철회 범위표</td><td>대상 corpus 권한이 없으면 데이터 연결 금지</td></tr>
+      <tr><td>1</td><td>owner package validator, PDF-to-Markdown QA, hash inventory</td><td>출처/권리 record가 없으면 quarantine</td></tr>
+      <tr><td>2</td><td>private RAG, 문단 인용, 기권</td><td>인용/시간성 시험 실패 시 사용자 제공 금지</td></tr>
+      <tr><td>3</td><td>한국어 golden set, injection/revocation/identity suite</td><td>사전 정의한 gate 미달 시 release 금지</td></tr>
+      <tr><td>4</td><td>삭제·복구 drill</td><td>descendant 제거 확인 전 삭제 보장 금지</td></tr>
+      <tr><td>5</td><td>선택적 unmerged LoRA shadow test</td><td>문체 외 성능 악화 또는 안전 회귀 시 폐기</td></tr>
+    </tbody>
+  </table>
+
+  <h2>8. Mac M3 Pro</h2>
+  <p>M3 Pro는 local inference, embedding, indexing, evaluation의 적절한 첫 실행 환경이다. Apple은 Apple silicon에서 PyTorch MPS를 문서화하고, Ollama와 llama.cpp는 Apple M-series/Metal을 지원한다. 다만 이 연구 시점에는 tars의 RAM과 실제 latency benchmark를 SSH client configuration ownership 오류 때문에 검증하지 못했으므로, 특정 모델 크기 약속은 하지 않는다. <a href="https://developer.apple.com/metal/pytorch/">Apple MPS</a> · <a href="https://docs.ollama.com/macos">Ollama macOS</a> · <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a></p>
+
+  <h2>9. 최종 의사결정</h2>
+  <div class="decision">
+    <strong>모르는 특정인, 동의 없음:</strong> crawler/학습/실명 persona는 진행하지 않는다.<br>
+    <strong>동의·원문 제공 있음:</strong> 비공개 RAG MVP부터 구현한다.<br>
+    <strong>문체 학습 필요:</strong> RAG와 평가 gate가 통과한 뒤에만 권한 범위 안에서 LoRA를 실험한다.
+  </div>
+  <p class="source">상세 근거, claim graph, 관찰 기록, 검증 결과는 같은 폴더의 <code>SYNTHESIS.md</code>, <code>observation-manifest.md</code>, <code>verify-platform-and-runtime.md</code>에 있다.</p>
+</body>
+</html>

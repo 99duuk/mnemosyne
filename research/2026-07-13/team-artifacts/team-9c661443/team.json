@@ -1,0 +1,460 @@
+{
+  "schemaVersion": 3,
+  "transport": "multi_agent_v2",
+  "teamId": "df7773ae-2d56-4e06-af4e-d9958fdf115d",
+  "teamName": "blog-persona-research-recovery",
+  "sessionName": "20260713-r2",
+  "sessionId": "team-9c661443",
+  "threadTitleConvention": null,
+  "status": "archived",
+  "createdAt": "2026-07-13T10:36:58.431Z",
+  "updatedAt": "2026-07-13T23:56:45.599Z",
+  "archivedAt": "2026-07-13T23:56:45.599Z",
+  "leader": {
+    "kind": "main-session",
+    "sessionId": null,
+    "agentPath": "/root"
+  },
+  "communication": {
+    "memberLanguage": "english",
+    "replyToUserInUserLanguage": true
+  },
+  "worktree": {
+    "enabled": false,
+    "baseBranch": "dev",
+    "root": "/home/akinella/workspace/.omo/teams/team-9c661443/worktrees"
+  },
+  "paths": {
+    "dir": "/home/akinella/workspace/.omo/teams/team-9c661443",
+    "team": "/home/akinella/workspace/.omo/teams/team-9c661443/team.json",
+    "guide": "/home/akinella/workspace/.omo/teams/team-9c661443/guide.md",
+    "artifacts": "/home/akinella/workspace/.omo/teams/team-9c661443/artifacts"
+  },
+  "members": [
+    {
+      "id": "N",
+      "name": "skeptic-countersearch",
+      "focus": "Refute legality, completeness, persona validity and safety claims",
+      "lens": "perspective",
+      "deliverable": "Cross-axis counter-evidence ledger",
+      "taskName": "skeptic_countersearch_r2",
+      "agentPath": "/root/skeptic_countersearch_r2",
+      "threadId": null,
+      "threadTitle": null,
+      "cwd": null,
+      "worktree": {
+        "path": null,
+        "branch": null
+      },
+      "status": "archived"
+    },
+    {
+      "id": "J",
+      "name": "security-threats",
+      "focus": "Injection, poisoning, exfiltration, memorization and impersonation abuse",
+      "lens": "area",
+      "deliverable": "Threat model with preventive detective recovery controls",
+      "taskName": "security_threats_r2",
+      "agentPath": "/root/security_threats_r2",
+      "threadId": null,
+      "threadTitle": null,
+      "cwd": null,
+      "worktree": {
+        "path": null,
+        "branch": null
+      },
+      "status": "archived"
+    },
+    {
+      "id": "A",
+      "name": "naver-policy",
+      "focus": "Naver Blog Terms, robots, API/export, automated access rules",
+      "lens": "ownership",
+      "deliverable": "Complete official-source map with dated evidence and counter-search",
+      "taskName": "naver_policy_r2",
+      "agentPath": "/root/naver_policy_r2",
+      "threadId": null,
+      "threadTitle": null,
+      "cwd": "/home/akinella/workspace",
+      "worktree": {
+        "path": null,
+        "branch": null
+      },
+      "status": "archived"
+    },
+    {
+      "id": "C",
+      "name": "identity-ethics",
+      "focus": "Consent, impersonation, disclosure, revocation and audience harm",
+      "lens": "perspective",
+      "deliverable": "Scenario-specific consent and deployment gate",
+      "taskName": "identity_ethics_r2",
+      "agentPath": "/root/identity_ethics_r2",
+      "threadId": null,
+      "threadTitle": null,
+      "cwd": "/home/akinella/workspace",
+      "worktree": {
+        "path": null,
+        "branch": null
+      },
+      "status": "archived"
+    },
+    {
+      "id": "H",
+      "name": "persona-science",
+      "focus": "Epistemic validity of reproducing thinking from text",
+      "lens": "perspective",
+      "deliverable": "Measurable proxy definition and limits",
+      "taskName": "persona_science_r2",
+      "agentPath": "/root/persona_science_r2",
+      "threadId": null,
+      "threadTitle": null,
+      "cwd": null,
+      "worktree": {
+        "path": null,
+        "branch": null
+      },
+      "status": "archived"
+    },
+    {
+      "id": "I",
+      "name": "evaluation-harness",
+      "focus": "Faithfulness, stance, style, calibration, privacy and impersonation tests",
+      "lens": "area",
+      "deliverable": "Exact evaluation harness specification",
+      "taskName": "evaluation_harness_r2",
+      "agentPath": "/root/evaluation_harness_r2",
+      "threadId": null,
+      "threadTitle": null,
+      "cwd": null,
+      "worktree": {
+        "path": null,
+        "branch": null
+      },
+      "status": "archived"
+    },
+    {
+      "id": "G",
+      "name": "finetuning-methods",
+      "focus": "Prompt/profile vs SFT/LoRA/DPO/CPT/distillation and unlearning",
+      "lens": "area",
+      "deliverable": "Training decision matrix with empirical evidence",
+      "taskName": "finetuning_methods_r2",
+      "agentPath": "/root/finetuning_methods_r2",
+      "threadId": null,
+      "threadTitle": null,
+      "cwd": null,
+      "worktree": {
+        "path": null,
+        "branch": null
+      },
+      "status": "archived"
+    },
+    {
+      "id": "M",
+      "name": "international-policy",
+      "focus": "EU/US comparative copyright/privacy/persona policy",
+      "lens": "perspective",
+      "deliverable": "Comparative context separated from Korea",
+      "taskName": "international_policy_r2",
+      "agentPath": "/root/international_policy_r2",
+      "threadId": null,
+      "threadTitle": null,
+      "cwd": null,
+      "worktree": {
+        "path": null,
+        "branch": null
+      },
+      "status": "archived"
+    },
+    {
+      "id": "L",
+      "name": "opensource-patterns",
+      "focus": "SHA-pinned persona/RAG/evaluation OSS patterns and incidents",
+      "lens": "ownership",
+      "deliverable": "Verified patterns and anti-patterns",
+      "taskName": "opensource_patterns_r2",
+      "agentPath": "/root/opensource_patterns_r2",
+      "threadId": null,
+      "threadTitle": null,
+      "cwd": null,
+      "worktree": {
+        "path": null,
+        "branch": null
+      },
+      "status": "archived"
+    },
+    {
+      "id": "F",
+      "name": "rag-architecture",
+      "focus": "Grounded persona RAG, Korean retrieval, temporal stances and abstention",
+      "lens": "area",
+      "deliverable": "Evidence-grounded architecture and failure modes",
+      "taskName": "rag_architecture_r2",
+      "agentPath": "/root/rag_architecture_r2",
+      "threadId": null,
+      "threadTitle": null,
+      "cwd": null,
+      "worktree": {
+        "path": null,
+        "branch": null
+      },
+      "status": "archived"
+    },
+    {
+      "id": "K",
+      "name": "cost-operations",
+      "focus": "Corpus sizing, cost formulas, latency, rebuild and operations",
+      "lens": "area",
+      "deliverable": "MVP and production economics plan",
+      "taskName": "cost_operations_r2",
+      "agentPath": "/root/cost_operations_r2",
+      "threadId": null,
+      "threadTitle": null,
+      "cwd": null,
+      "worktree": {
+        "path": null,
+        "branch": null
+      },
+      "status": "archived"
+    },
+    {
+      "id": "D",
+      "name": "collection-engineering",
+      "focus": "Owner export, official API/RSS, enumeration, normalization, incremental sync",
+      "lens": "area",
+      "deliverable": "Deployable acquisition design without bypass",
+      "taskName": "collection_engineering_r2",
+      "agentPath": "/root/collection_engineering_r2",
+      "threadId": null,
+      "threadTitle": null,
+      "cwd": "/home/akinella/workspace",
+      "worktree": {
+        "path": null,
+        "branch": null
+      },
+      "status": "archived"
+    },
+    {
+      "id": "B",
+      "name": "korean-law",
+      "focus": "Korean copyright, privacy, personality and AI training law",
+      "lens": "ownership",
+      "deliverable": "Complete primary-law matrix with uncertainty and counter-search",
+      "taskName": "korean_law_r2",
+      "agentPath": "/root/korean_law_r2",
+      "threadId": null,
+      "threadTitle": null,
+      "cwd": "/home/akinella/workspace",
+      "worktree": {
+        "path": null,
+        "branch": null
+      },
+      "status": "archived"
+    },
+    {
+      "id": "E",
+      "name": "data-governance",
+      "focus": "Provenance, retention, deletion, private transition and lineage",
+      "lens": "area",
+      "deliverable": "Reversible data lifecycle and deletion drill",
+      "taskName": "data_governance_r2",
+      "agentPath": "/root/data_governance_r2",
+      "threadId": null,
+      "threadTitle": null,
+      "cwd": null,
+      "worktree": {
+        "path": null,
+        "branch": null
+      },
+      "status": "archived"
+    }
+  ],
+  "log": [
+    {
+      "ts": "2026-07-13T10:36:58.431Z",
+      "event": "created",
+      "detail": "team blog-persona-research-recovery"
+    },
+    {
+      "ts": "2026-07-13T10:37:14.384Z",
+      "event": "add-member",
+      "detail": "member N (perspective): Refute legality, completeness, persona validity and safety claims"
+    },
+    {
+      "ts": "2026-07-13T10:37:15.399Z",
+      "event": "add-member",
+      "detail": "member J (area): Injection, poisoning, exfiltration, memorization and impersonation abuse"
+    },
+    {
+      "ts": "2026-07-13T10:37:16.231Z",
+      "event": "add-member",
+      "detail": "member A (ownership): Naver Blog Terms, robots, API/export, automated access rules"
+    },
+    {
+      "ts": "2026-07-13T10:37:16.490Z",
+      "event": "add-member",
+      "detail": "member C (perspective): Consent, impersonation, disclosure, revocation and audience harm"
+    },
+    {
+      "ts": "2026-07-13T10:37:16.921Z",
+      "event": "add-member",
+      "detail": "member H (perspective): Epistemic validity of reproducing thinking from text"
+    },
+    {
+      "ts": "2026-07-13T10:37:17.422Z",
+      "event": "add-member",
+      "detail": "member I (area): Faithfulness, stance, style, calibration, privacy and impersonation tests"
+    },
+    {
+      "ts": "2026-07-13T10:37:17.466Z",
+      "event": "add-member",
+      "detail": "member G (area): Prompt/profile vs SFT/LoRA/DPO/CPT/distillation and unlearning"
+    },
+    {
+      "ts": "2026-07-13T10:37:17.567Z",
+      "event": "add-member",
+      "detail": "member M (perspective): EU/US comparative copyright/privacy/persona policy"
+    },
+    {
+      "ts": "2026-07-13T10:37:17.627Z",
+      "event": "add-member",
+      "detail": "member L (ownership): SHA-pinned persona/RAG/evaluation OSS patterns and incidents"
+    },
+    {
+      "ts": "2026-07-13T10:37:17.673Z",
+      "event": "add-member",
+      "detail": "member F (area): Grounded persona RAG, Korean retrieval, temporal stances and abstention"
+    },
+    {
+      "ts": "2026-07-13T10:37:17.706Z",
+      "event": "add-member",
+      "detail": "member K (area): Corpus sizing, cost formulas, latency, rebuild and operations"
+    },
+    {
+      "ts": "2026-07-13T10:37:17.729Z",
+      "event": "add-member",
+      "detail": "member D (area): Owner export, official API/RSS, enumeration, normalization, incremental sync"
+    },
+    {
+      "ts": "2026-07-13T10:37:17.756Z",
+      "event": "add-member",
+      "detail": "member B (ownership): Korean copyright, privacy, personality and AI training law"
+    },
+    {
+      "ts": "2026-07-13T10:37:17.782Z",
+      "event": "add-member",
+      "detail": "member E (area): Provenance, retention, deletion, private transition and lineage"
+    },
+    {
+      "ts": "2026-07-13T10:38:10.635Z",
+      "event": "bind-agent",
+      "detail": "member C -> agent /root/identity_ethics_r2"
+    },
+    {
+      "ts": "2026-07-13T10:38:10.767Z",
+      "event": "bind-agent",
+      "detail": "member B -> agent /root/korean_law_r2"
+    },
+    {
+      "ts": "2026-07-13T10:38:11.635Z",
+      "event": "bind-agent",
+      "detail": "member A -> agent /root/naver_policy_r2"
+    },
+    {
+      "ts": "2026-07-13T10:57:29.802Z",
+      "event": "bind-agent",
+      "detail": "member D -> agent /root/collection_engineering_r2"
+    },
+    {
+      "ts": "2026-07-13T10:57:36.157Z",
+      "event": "set-status",
+      "detail": "member C -> reported"
+    },
+    {
+      "ts": "2026-07-13T10:57:36.185Z",
+      "event": "set-status",
+      "detail": "member A -> reported"
+    },
+    {
+      "ts": "2026-07-13T10:57:36.221Z",
+      "event": "set-status",
+      "detail": "member B -> reported"
+    },
+    {
+      "ts": "2026-07-13T11:03:36.449Z",
+      "event": "set-status",
+      "detail": "member D -> reported"
+    },
+    {
+      "ts": "2026-07-13T11:07:47.219Z",
+      "event": "set-status",
+      "detail": "member E -> reported"
+    },
+    {
+      "ts": "2026-07-13T11:12:30.845Z",
+      "event": "set-status",
+      "detail": "member F -> reported"
+    },
+    {
+      "ts": "2026-07-13T11:12:41.413Z",
+      "event": "set-status",
+      "detail": "member I -> active"
+    },
+    {
+      "ts": "2026-07-13T11:12:41.431Z",
+      "event": "set-status",
+      "detail": "member G -> active"
+    },
+    {
+      "ts": "2026-07-13T11:14:01.415Z",
+      "event": "set-status",
+      "detail": "member K -> reported"
+    },
+    {
+      "ts": "2026-07-13T11:17:59.577Z",
+      "event": "set-status",
+      "detail": "member G -> reported"
+    },
+    {
+      "ts": "2026-07-13T11:21:32.356Z",
+      "event": "set-status",
+      "detail": "member I -> reported"
+    },
+    {
+      "ts": "2026-07-13T11:21:38.657Z",
+      "event": "set-status",
+      "detail": "member H -> reported"
+    },
+    {
+      "ts": "2026-07-13T11:21:38.686Z",
+      "event": "set-status",
+      "detail": "member L -> reported"
+    },
+    {
+      "ts": "2026-07-13T11:21:38.718Z",
+      "event": "set-status",
+      "detail": "member J -> reported"
+    },
+    {
+      "ts": "2026-07-13T11:21:38.748Z",
+      "event": "set-status",
+      "detail": "member M -> reported"
+    },
+    {
+      "ts": "2026-07-13T11:21:42.585Z",
+      "event": "set-status",
+      "detail": "member N -> active"
+    },
+    {
+      "ts": "2026-07-13T11:30:26.242Z",
+      "event": "set-status",
+      "detail": "member N -> reported"
+    },
+    {
+      "ts": "2026-07-13T23:56:45.599Z",
+      "event": "archive",
+      "detail": "Research complete; unconditional HEAVY approval received."
+    }
+  ]
+}

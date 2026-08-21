@@ -1,0 +1,21 @@
+{
+  "name": "naver-persona-research-report",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "node build-report.mjs",
+    "render": "node render-report.mjs",
+    "render:pdf-pages": "node render-pdf-pages.mjs",
+    "verify": "npm run build && npm run render && npm run render:pdf-pages"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "0.1.80",
+    "marked": "16.2.1",
+    "pdfjs-dist": "5.4.296",
+    "playwright": "1.55.1"
+  }
+}

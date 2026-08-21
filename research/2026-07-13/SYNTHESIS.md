@@ -1,0 +1,461 @@
+# 네이버 블로그 기반 사고·문체 프록시 구현 청사진
+
+연구 기준일: 2026-07-13 KST  
+결론 수준: 공식 문서·한국 법령/판례·동료평가 연구·실행 검증을 종합한 기술 설계. 개별 배포에 대한 법률 의견은 아님.
+
+## TL;DR
+
+구현 자체는 가능하다. 다만 정확한 제품 정의는 “특정인의 사고를 똑같이 복제한 분신”이 아니라 다음이어야 한다.
+
+> 권한이 확인된 저작물에서 관찰되는 과거 주장, 판단 근거, 표현 습관과 시간별 변화를 출처와 날짜를 붙여 답하는 개인화 분석 프록시
+
+현재 권장 범위는 **비공개·출처 명시형·RAG 우선 분석 시스템**이다. 공개된 실명 1인칭 챗봇은 글의 화자를 시스템으로 바꾸고 현재의 동의·신념을 암시하므로 별도 정체성 행위다. 출처 문장을 “그는 2023년에 X라고 썼다”에서 “나는 X라고 믿는다”로 바꾸는 것은 단순 문체 변환이 아니다. 공개 1인칭 모드는 현재 설계의 승인 범위에서 제외한다. [Source 13] [Source 16] [Source 21] [Source 29]
+
+수집은 스크래퍼부터 만들면 안 된다. 네이버 현재·직전 약관은 사전 허락 없는 자동 수집을 제한하고, 현재 Blog robots 응답은 AI 학습/RAG 목적 봇 접근을 명시적으로 거부한다. 저자의 동의는 저자 측 권리를 해결할 수 있지만 네이버 인프라 자동 접근 권한이나 제3자 권리까지 대신하지 않는다. [Source 1] [Source 2] [Source 26]
+
+가장 안전한 기본 경로는 다음이다.
+
+1. 저자가 네이버 밖에서 원문·미디어 원본과 서명된 글 목록을 직접 제공한다.
+2. 네이버 기본 PDF 백업은 보조 증거로 사용한다. PDF는 글당/용량 제한과 미디어 누락이 있는 손실형 산출물이다. [Source 4]
+3. 글·인용·댓글·사진·개인정보를 블록 단위로 분리하고, 권리가 불명확한 블록은 격리한다.
+4. 사실과 날짜별 입장은 versioned RAG/profile에 둔다. 처음부터 모델 가중치에 학습하지 않는다. [Source 14] [Source 15]
+5. 답변은 기본적으로 “저자는 날짜 Y에 X라고 썼다” 형식의 3인칭 분석으로 제공하고 문장별 출처를 붙인다.
+6. 삭제는 원문, 정규화본, 청크, 임베딩, 프로필, 캐시, 데이터셋, 어댑터까지 lineage로 전파한다. 실제 삭제·복원 드릴을 통과하기 전에는 삭제 보장을 주장하지 않는다. [Source 10] [Source 19]
+
+## 문제 원인 분석
+
+### 1. “사고를 똑같이”는 검증할 수 없는 목표다
+
+블로그는 저자가 공개하기로 선택한 결과물이다. 비공개 사고, 상황별 행동, 최근에 바뀐 신념, 말하지 않은 가치 판단을 포함하지 않는다. 현재 persona/digital-twin 연구도 유창한 대화와 연속 행동 재현을 구분하며, 최신 모델도 장기적·연속적 행동 모사에서 어려움을 보인다. [Source 12] Persona 능력은 모델 크기나 최신성만으로 단조롭게 좋아지지도 않는다. [Source 13]
+
+따라서 성공 정의를 다음 다섯 개의 관찰 가능 항목으로 바꿔야 한다.
+
+- 기록된 사실을 정확히 찾는가.
+- 특정 날짜에 표명한 입장과 그 변화를 정확히 설명하는가.
+- 저자가 문서에 적은 판단 이유만 재현하고, 숨은 이유를 추정하지 않는가.
+- 문체가 유사해도 사실·입장·화자 의미를 바꾸지 않는가.
+- 근거가 없을 때 그 사람처럼 지어내지 않고 기권하는가.
+
+### 2. 공개 접근, 자동 수집, 재사용 권한은 다른 문제다
+
+다음 네 gate를 각각 통과해야 한다.
+
+| Gate | 질문 | 실패 시 |
+|---|---|---|
+| 플랫폼 접근 | 이 endpoint와 빈도로 자동 수집할 네이버 허가가 있는가 | 자동 수집 중단 |
+| 저작권·DB | 해당 글·사진·배열을 저장·변환·임베딩·학습·생성에 쓸 권한이 있는가 | 항목 제외 또는 별도 허락 |
+| 개인정보 | 개인정보·민감정보 처리의 목적과 법적 근거가 있는가 | 격리·삭제·법률 검토 |
+| 정체성·공개 | 이름·화자·1인칭·상업 채널로 persona를 공개할 구체적 권한이 있는가 | 3인칭 분석으로 축소 또는 중단 |
+
+`저작권·DB`는 하나의 권리라는 뜻이 아니다. 글·사진의 저작권과 데이터베이스 제작자의 추출·재이용 권리는 별도 사실관계로 판정한다. [Source 27] 공개 개인정보도 보호 대상이며, 새로운 이용은 원래 공개 목적과 처리 근거를 따져야 한다. [Source 7] 저작권법 제35조의5도 사실관계별 판단 조항이지 AI 학습의 포괄적 면책이 아니다. 2026 가이드 역시 세이프하버가 아니다. [Source 5] [Source 6]
+
+### 3. “모든 글”의 분모를 알 수 없다
+
+Search API는 검색 query와 snippet을 반환하며 완전한 계정 export가 아니다. 공식 검색 노출도 완전성을 보장하지 않는다. [Source 3] owner PDF는 공식 경로지만 미디어·특정 항목이 누락되고 형식이 바뀐다. [Source 4]
+
+따라서 시스템이 증명할 수 있는 것은 다음뿐이다.
+
+> 기준시점 T에 저자가 서명해 선언한 in-scope inventory에 대한 set equality와 freshness
+
+상태명도 `COMPLETE`가 아니라 `COMPLETE_RELATIVE_TO_OWNER_DECLARED_SCOPE_AT_CUTOFF`로 해야 한다. 체크섬과 Merkle root는 제출된 집합의 고정성·변조 여부를 증명할 뿐, 제출하지 않은 글이 없다는 사실을 증명하지 않는다. [Source 22]
+
+### 4. RAG와 파인튜닝의 역할이 자주 뒤섞인다
+
+RAG는 사실, 날짜, 출처, 삭제 가능성을 담당한다. 파인튜닝은 안정적인 응답 습관이나 문체를 보정하는 수단이다. 사실과 현재 입장을 가중치에 넣으면 갱신·인용·삭제가 어려워진다. 비교 연구에서는 새로운 사실 주입에서 RAG가 비지도 파인튜닝보다 안정적이었지만, RAG도 검색 문서를 무시하거나 모순된 내용을 생성할 수 있다. [Source 14] [Source 17]
+
+### 5. 삭제는 데이터베이스 행 삭제가 아니다
+
+원문에서 만들어진 임베딩, profile summary, evaluation fixture, answer cache, fine-tuned adapter가 남을 수 있다. PIPA가 적용되는 경우 처리 근거·동의·철회·처리정지와 삭제 요구를 먼저 확인하고, 불필요해진 개인정보의 파기와 복구·재생 방지, 수탁자 관리를 별도 통제로 구현해야 한다. [Source 28] [Source 8] [Source 9] 현재 machine unlearning은 방법별로 기억·privacy·utility trade-off가 크므로 삭제 증명으로 자동 인정할 수 없다. [Source 19] [Source 20]
+
+## 정확한 해결책
+
+### 1. 권한 기반 의사결정 트리
+
+```text
+START
+  ├─ 대상이 본인이거나, 살아 있는 저자의 구체적 서면 동의가 있는가?
+  │    └─ 아니오: 실명/식별 가능한 persona 공개 중단
+  │             필요하면 출처 귀속형 문헌 분석만 별도 검토
+  ├─ 저자가 원문 + 서명 inventory + 권리 범위를 직접 제공하는가?
+  │    └─ 예: owner-mediated offline ingestion
+  │    └─ 아니오: 완전성 주장 금지, 네이버 자동 수집도 서면 허가 전 중단
+  ├─ 인용·댓글·사진·제3자 개인정보를 항목별로 처리했는가?
+  │    └─ 아니오: 해당 block quarantine
+  ├─ private source-attributed RAG analyst가 평가 gate를 통과했는가?
+  │    └─ 아니오: 공개·튜닝 금지, retrieval/governance부터 수정
+  ├─ 반복되는 순수 문체/행동 gap이 남고 별도 동의가 있는가?
+  │    └─ 예: unmerged one-person LoRA pilot 검토
+  └─ 공개 실명 1인칭인가?
+       └─ 현재 권장 범위 밖. 별도 법률·정체성·혼동·삭제 검증 전 BLOCK
+```
+
+### 2. 수집 패키지
+
+저자가 지원 UI에서 준비하고 서명하는 오프라인 delivery를 canonical input으로 한다.
+
+```text
+delivery-<subject>-<snapshot-time>/
+  delivery.json
+  inventory.csv
+  batches/
+    batch-0001.pdf
+    batch-0001.manifest.csv
+  media/
+  media.csv
+  changes.csv
+  SHA256SUMS
+  SIGNATURE
+```
+
+`inventory.csv` 최소 필드:
+
+```csv
+provider,owner_subject_id,blog_id_alias,log_no,title,published_at,modified_at,category_path,visibility,lifecycle_state,authorship,export_batch,export_ordinal
+```
+
+규칙:
+
+- `owner_subject_id + log_no`를 내부 문서 identity로 사용한다. Blog ID는 변경 가능한 alias다.
+- `modified_at`이 없고 변경 ledger도 없으면 freshness는 `UNKNOWN`이다.
+- 사라진 검색/RSS 항목을 삭제로 추정하지 않는다. 저자가 서명한 상태 전이만 tombstone을 만든다.
+- 댓글, 인용, OCR, 미디어, 출처 불명 텍스트는 저자 본문과 분리해 기본 격리한다.
+- RSS와 Search API corpus adapter는 기본 `OFF`다. RSS의 AI/RAG 저장 범위는 네이버 서면 확인 전 미해결이다.
+
+### 3. 데이터 lifecycle과 schema
+
+핵심 원칙은 하나의 `consent=true`가 아니라 권한과 파생관계를 버전으로 관리하는 것이다.
+
+```sql
+source_item_version(
+  source_item_version_id, owner_subject_id, provider_post_no,
+  visibility, published_at, observed_at, content_sha256,
+  third_party_class, sensitivity, governance_state
+)
+
+rights_basis_version(
+  rights_basis_version_id, basis_domain,
+  purpose_codes, operation_scope, audience_scope,
+  effective_from, effective_until, withdrawn_at,
+  evidence_uri, evidence_sha256
+)
+
+artifact(
+  artifact_id, artifact_type, content_sha256,
+  produced_by_run_id, governance_state,
+  retention_until, invalidated_at, deletion_case_id
+)
+
+artifact_edge(
+  parent_artifact_id, child_artifact_id,
+  relation -- derived_from, embedded_from, trained_on, exported_from...
+)
+```
+
+상태는 겹쳐 쓰지 않는다.
+
+```text
+DISCOVERED -> QUARANTINED -> REVIEWED -> AUTHORIZED -> ACTIVE
+ACTIVE -> SUSPENDED -> DELETE_PENDING -> PURGING -> VERIFYING
+VERIFYING -> DELETED -> TOMBSTONED
+          -> PARTIAL_FAILURE -> PURGING
+```
+
+`immutable`은 권한과 보존기간이 유효한 동안 append-only라는 뜻이다. 파기·보존기간 만료·키 폐기·권리 철회를 무시하는 영구 보존을 뜻하지 않는다.
+
+공개 상태 변화는 권리 철회와 동일하다고 자동 판정하지 않지만, `PUBLIC → PRIVATE`는 즉시 제품 중단 신호로 처리한다. 항목별 관찰에서 비공개 전환을 확인하면 동기적으로 `SUSPENDED`로 바꾸고 모든 descendant를 serving·profile·학습·평가·export에서 먼저 제외한 뒤 권한을 재검토한다. `MISSING`은 삭제로 추정하지 않고 보류한다. `PRIVATE → PUBLIC`도 자동 재활성화하지 않으며 새 관찰과 유효한 권한 근거를 검토해 새 version으로 승인한다. `TOMBSTONED` artifact는 재활성화하지 않는다. [Source 38]
+
+### 4. 권장 RAG 아키텍처
+
+```text
+OWNER PACKAGE
+  -> signature/checksum gate
+  -> quarantine + rights/sensitive review
+  -> immutable-while-retained raw artifact
+  -> revision / paragraph / sentence-span normalization
+  -> dated atomic claim candidates
+  -> versioned latest-observed profile + contradiction graph
+  -> serving generation
+       ├─ Korean lexical index: Nori/Kiwi-aware BM25
+       ├─ dense index: KURE/BGE 후보를 target corpus에서 비교
+       └─ exact quote/span index
+
+QUERY
+  -> mode + identity + as-of parser
+  -> owner/rights/lifecycle/time filters BEFORE ranking
+  -> lexical + dense retrieval in parallel
+  -> RRF fusion -> optional reranker
+  -> support + counterevidence pack
+  -> atomic answer plan
+  -> dated third-person answer
+  -> post-generation claim/citation/quote verification
+  -> answer or abstention reason
+```
+
+검색된 블로그 본문은 **신뢰할 수 없는 데이터**다. 본문에 “이전 지시를 무시하라” 같은 문자열이 있어도 시스템·개발자 정책이나 도구 지시로 해석하지 않는다. instruction과 evidence 채널을 구조적으로 분리하고, 허용된 answer-plan schema 밖 출력은 fail-closed로 차단하며, owner·rights·lifecycle filter는 vector search 이전에 적용한다. [Source 35] [Source 36]
+
+한국어 retrieval은 dense-only로 정하지 않는다. 고유명사, 합성어, 숫자, 날짜, 부정 표현은 lexical 검색이 강하고, paraphrase는 dense가 보완한다. target golden set에서 lexical/dense/hybrid/rerank ablation을 실행해 선택한다. [Source 23] [Source 24]
+
+### 5. 시간과 현재 입장 처리
+
+`valid_to IS NULL`은 “현재도 믿는다”가 아니라 “더 늦은 관찰이 없다”는 뜻이다.
+
+응답 정책:
+
+- `historical(as_of=T)`: T 시점에 이용 가능한 증거만 사용한다.
+- `latest_observed`: 가장 최근에 관찰된 발언과 날짜를 말한다.
+- `current`: 사전에 정의한 freshness window 안에서 명시적으로 재확인된 경우만 사용한다.
+- 그 외: “가장 최근 확인된 발언은 날짜 Y의 X이며, 현재 입장은 자료로 확인되지 않는다.”
+- 같은 시점 증거가 충돌하면 양쪽 출처를 보여주고 하나의 입장으로 합치지 않는다.
+
+### 6. 생성 정책
+
+기본 output contract:
+
+```text
+1. corpus가 답할 수 있는지 판단한다.
+2. 답할 수 있으면 날짜가 붙은 atomic claim plan을 만든다.
+3. 각 claim에 source span을 연결한다.
+4. 3인칭으로 답한다.
+5. 직접 인용은 하나의 원문 NFC contiguous span과 정확히 일치할 때만 허용한다.
+6. 생성 후 다시 claim을 분해해 support/completeness/speaker/time을 검증한다.
+7. 실패하면 NO_EVIDENCE, TEMPORAL_AMBIGUITY, CONFLICT, RIGHTS_BLOCK,
+   QUOTE_MISMATCH, POLICY_BLOCK 중 하나로 기권한다.
+```
+
+시스템은 이메일, 게시, 결제, 계정 변경, 계약, 메시지 전송 도구를 갖지 않는다. 이는 영원한 법칙이 아니라 MVP release boundary다. 향후 read-only 기능도 별도 권한·감사·rollback을 통과해야 한다.
+
+### 7. 위협 모델: 예방 → 탐지 → 복구
+
+평가 공격 성공률만 재는 것으로는 부족하다. 각 위협에 런타임 예방, 관측 가능한 탐지, 실제 복구 경로가 모두 있어야 한다. RAG는 근거 접근성을 높이지만 ingestion·vector·retrieval·output의 공격면을 추가하고, 외부 agency는 이 용도에 불필요한 피해 범위를 만든다. [Source 35] [Source 36] [Source 37]
+
+| 위협 | 예방 | 탐지 | 복구 |
+|---|---|---|---|
+| 게시물의 간접 prompt injection | corpus를 untrusted data로 처리, hidden/active markup 제거, instruction/evidence 경계, target tool 없음 | canary corpus, injection·policy bypass suite, output schema 위반 로그 | 항목 격리, 영향 index/profile 재생성 |
+| corpus poisoning·revision takeover | 서명 owner delivery, hash·revision lineage, 권리 gate, manual review | 예상 밖 hash·source·embedding 분포 변경 alert | eligible view rollback, 오염 revision tombstone |
+| 개인정보·교차 tenant 유출 | 검색 전 subject/tenant/rights filter, sensitive block 격리, least-privilege read store | extraction red-team, canary, 접근 감사 로그 | 접근 차단, chunk/cache 제거, incident 처리 |
+| 허위 인용·저자 오인 | exact span matcher, 합성문을 따옴표로 표시하지 않음, speaker/time validator | zero-tolerance quote test, citation completeness, identity comprehension | 응답 차단, 공개 endpoint 중단, 정정 |
+| 정체성 확대·과도한 agency | credential·외부 tool 없음, AI/not-the-person 표시, 인간 승인 없는 현실 행위 금지 | attempted-action telemetry, disclosure comprehension | capability 제거, 3인칭 attributed mode로 강등 |
+| 삭제·비공개 자료 부활 | retrieval 전 active lifecycle filter, non-content tombstone, restore 시 tombstone 우선 | revocation query, index enumeration, backup restore drill | descendant/index/profile/cache 재구축, adapter/checkpoint retire |
+
+### 8. 튜닝 결정
+
+```text
+facts / dated stances / citations / deletion -> versioned profile + RAG
+explicit behavior rules                   -> system prompt + few-shot
+measured residual style gap               -> optional unmerged one-person LoRA
+stable real pairwise preferences           -> optional DPO after LoRA
+serving economics proven                   -> optional distillation, RAG retained
+one-blog objective                         -> no continued pretraining
+```
+
+LoRA 검토 조건:
+
+- RAG의 retrieval, citation, privacy, identity, deletion gate가 먼저 통과한다.
+- 최소 다섯 intent cluster에서 반복되는 순수 행동/문체 실패가 있다.
+- prompt/profile 개선으로 해결되지 않는다.
+- blinded owner evaluation에서 사전 정의한 유의미한 개선을 보인다.
+- 사실·privacy·citation·Korean 품질이 비열등하다.
+- adapter는 base에 merge하지 않고, 모든 checkpoint/optimizer/export를 찾아 폐기하는 drill을 통과한다.
+
+학습 데이터는 raw blog next-token dump가 아니라 제3자 사실을 제거한 검토된 `prompt -> response` 예제로 만든다. 중복 제거와 문서·주제·시간 단위 분할이 필요하다. [Source 18]
+
+### 9. 평가 하네스
+
+단일 persona 점수가 아니라 citation support, temporal stance, privacy, identity, security를 독립 gate로 둔다. 문장·주장 단위 citation 평가는 단순 retrieved-document 나열보다 엄격해야 하고 자동 평가는 사람 gold로 교정한다. [Source 30] [Source 31] 다중 시나리오·다중 지표 평가 원칙과 confabulation·privacy·information-integrity 위험을 분리해 본다. [Source 32] [Source 33] prompt-injection 방어율은 benign utility와 함께 측정해 무조건 차단기로 통과하는 것을 막는다. [Source 34]
+
+비교 arm:
+
+- B0: target 정보 없는 base.
+- B1: static profile prompt.
+- B2: source-attributed hybrid RAG.
+- B3: B2 + source-linked dated profile.
+- B4: B3 + separable style adapter.
+
+| 축 | 측정 | 실패 시 |
+|---|---|---|
+| declared inventory | 서명 inventory set reconciliation | ingest 중단 |
+| retrieval | Recall@20, P@10, nDCG@10, temporal precision | retriever 수정 |
+| support | atomic claim entailment, contradicted count | output 차단 |
+| citation | completeness, source/speaker/time validity | output 차단 |
+| quote | 하나의 NFC source span exact match | paraphrase 또는 차단 |
+| stance | current/historical macro-F1, transition, conflict | unknown/dated analysis로 축소 |
+| abstention | unknown recall + answerable refusal + risk coverage | threshold 재보정 |
+| privacy | excluded PII canary, extraction, MIA diagnostic | corpus/adapter 폐기 |
+| injection | policy/filter/identity bypass attack success | release 차단 |
+| identity | AI/not-person/current-belief/agency comprehension | 1인칭 제거·UI 수정 |
+| revocation | 모든 descendant, cache, backup, adapter sequential drill | offline 유지 |
+| agency | unauthorized tool call/real-world act | capability 제거 |
+
+고정 70/15/15 한 번이 아니라 rolling-origin fold를 쓰고, revision·repost·template·derived profile을 하나의 dependency component로 묶어 시간 누출을 막는다. 질문과 gold label은 봉인하되, query 시점에 합법적으로 이용 가능한 source는 as-of retriever index에 포함한다.
+
+숫자 gate는 법률 기준이 아니라 provisional internal policy다. point estimate가 아니라 confidence bound로 판정한다. 예를 들어 one-sided 95% lower bound 0.98을 zero failure로 통과하려면 독립 사례가 최소 149개 필요하다. 상관된 변형 prompt는 effective sample size를 낮추므로 더 많은 표본과 cluster-aware 분석이 필요하다.
+
+### 10. 삭제 saga
+
+```text
+request verified
+  -> serving synchronously blocked
+  -> source and all descendant artifacts resolved
+  -> DB/object/chunk/vector/profile/cache/eval/export purged
+  -> dataset snapshots invalidated
+  -> adapter/checkpoint retire/retrain/unlearn decision
+  -> processor/subprocessor request + evidence acknowledgement
+  -> content-minimized tombstone registered
+  -> backup expires/key destroyed; restore replays tombstones first
+  -> independent retrieval/extraction/restore verification
+```
+
+복원은 historical raw hash를 재현하려고 삭제된 content를 되살리면 안 된다. tombstone과 rights revocation을 먼저 적용한 뒤 현재 active authorized snapshot의 hash/root만 재현한다. 삭제된 content는 absent 또는 cryptographically inaccessible이어야 한다.
+
+## 확장 가능한 대안 제시
+
+### A. 본인용 private analyst
+
+가장 낮은 위험과 높은 실용성을 갖는다. 본인이 원본과 권리를 통제하고, 3인칭 출처 분석을 개인 환경에서 사용한다. 그래도 제3자 댓글·사진·민감정보는 별도다.
+
+### B. 동의받은 타인의 private analyst
+
+서명 동의서에 저장, 정규화, 임베딩, RAG, 학습 여부, 이름/이미지, 1인칭 여부, 공개/상업 채널, 기간, 철회, processor, checkpoint 폐기를 별도 항목으로 둔다. 기본은 3인칭 분석이다.
+
+### C. 무동의 공개 자료 연구
+
+실명 1인칭 persona는 만들지 않는다. 취득·처리의 적법성이 별도로 확인된 범위에서 “날짜 Y의 글에서 저자는 X라고 썼다”는 source-attributed documentary analysis만 검토한다. public-interest, 비평, 학술 등은 사실관계별 법률 검토 대상이다.
+
+### D. fictional composite
+
+특정인을 식별할 수 없도록 여러 허가된 출처에서 추상적 구조만 합성하고, 실제 인물의 이름·사진·특징적 표현·현재 견해를 주장하지 않는다. 독립 평가자가 원 인물을 안정적으로 식별하면 익명 composite가 아니다.
+
+### E. deceased author
+
+생전의 interactive simulation 동의, 저작권·인격적 이해관계의 권한자, 상충하는 유족, 이용자의 애도/취약성, 종료 절차를 다뤄야 한다. 생전 동의가 없으면 1인칭 부활형 시스템보다 archival/documentary analysis로 제한하는 것이 안전하다.
+
+## 단계별 실행안
+
+### Phase 0 — 권한과 중단 조건
+
+- 대상자와 권한자를 확인한다.
+- 플랫폼 접근, 저작권, 개인정보, persona 공개를 분리한 계약/검토표를 만든다.
+- 네이버 endpoint 자동화가 필요하면 exact endpoint/cadence/storage/AI purpose를 적어 서면 확인한다.
+- 실패하면 구현을 시작하지 않는다.
+
+### Phase 1 — owner package와 declared-scope inventory
+
+- 원본, PDF backup, row-complete inventory, change ledger, checksum/signature를 받는다.
+- PDF mapping과 미디어 누락을 수동 검증한다.
+- quote/comment/media/sensitive block을 quarantine한다.
+- `COMPLETE_RELATIVE_TO_OWNER_DECLARED_SCOPE_AT_CUTOFF` 리포트를 만든다.
+
+### Phase 2 — private third-person RAG MVP
+
+- PostgreSQL lineage/control plane을 만든다.
+- Korean lexical baseline부터 구현한다.
+- exact quote/span citation과 as-of filter를 먼저 통과시킨다.
+- dense/hybrid는 golden set ablation으로 추가한다.
+- persona에는 tool을 연결하지 않는다.
+
+### Phase 3 — Korean golden set과 release gate
+
+- current가 아니라 latest-observed/historical/unknown-current 질문을 설계한다.
+- 20개 이상의 query family, source-documented rationale, unknown, conflict, privacy, injection을 포함한다.
+- 표본 수와 confidence method를 사전 등록한다.
+- B2가 모든 applicable gate를 통과하지 못하면 private MVP도 release하지 않는다.
+
+### Phase 4 — 삭제·복원 drill
+
+- synthetic canary post 하나를 revoke한다.
+- DB, object, lexical/vector, profile, cache, processor, backup restore에서 제거를 확인한다.
+- B4가 있다면 adapter를 clean manifest로 rebuild 또는 retire한다.
+- drill이 끝나기 전 삭제 보장 문구를 쓰지 않는다.
+
+### Phase 5 — 선택적 style adapter
+
+- Phase 2–4가 모두 통과하고 반복되는 pure style gap이 있을 때만 검토한다.
+- unmerged one-person LoRA를 shadow mode에서 비교한다.
+- 의미 변화, 현재 견해 암시, memorization이 발생하면 폐기한다.
+
+### Phase 6 — public 여부 결정
+
+- 한국 법률 자문, 구체적 persona 동의, disclosure comprehension, complaint/takedown, revocation SLA를 검토한다.
+- 현재 조사 결론상 public named first-person은 기본 BLOCK이다.
+- public third-person analyst도 모든 gate를 다시 통과해야 한다.
+
+### Phase 7 — 운영·사고 대응
+
+- unsupported claim, false quote, deleted/private-source hit, injection bypass, identity confusion을 분리 계측한다.
+- serving suspension, descendant invalidation, processor acknowledgment, purge verification 시간을 각각 SLO로 둔다.
+- index/profile 갱신은 shadow build에서 검증한 뒤 원자적으로 전환하고, 실패하면 마지막 eligible snapshot으로 rollback한다.
+- 비용은 생성 요청당만 보지 않고 answered query와 abstained query 각각에 대해 retrieval, verification, storage, human review, deletion/rebuild를 포함해 측정한다.
+- incident runbook은 즉시 serving 차단, 영향 lineage 조회, cache/index/profile 재구축, 사용자·대상자 통지 여부 판단, 사후 검증 순서를 고정한다. [Source 32] [Source 35]
+
+## 주의 사항 또는 리스크
+
+- 이 설계는 실제 특정 블로그를 수집하지 않았다. 실대상 corpus 품질과 권리는 미검증이다.
+- robots는 접근 권한 자체가 아니라 machine-readable 운영 신호다. 현재 목적별 거부 응답의 관찰 근거와 계약상 자동수집 제한의 근거는 분리한다. [Source 26] [Source 1] [Source 2] [Source 25]
+- 저자 동의는 제3자 댓글·사진·인용·개인정보 권리를 자동 해결하지 않는다.
+- “현재 생각”은 최근 explicit reaffirmation 없이는 알 수 없다.
+- 정확 인용 검증은 텍스트 일치만 증명한다. 인용 허용, 맥락 공정성, 저작권 문제는 별도다.
+- 문체 score는 주제 복사를 문체로 오인할 수 있다. unseen-topic/decoy-author/semantic preservation test가 필요하다.
+- canary 미추출이나 MIA 실패는 기억이 없다는 증명이 아니다.
+- LoRA 파일 삭제는 base, merged copy, optimizer, trace, export에 corpus 영향이 없을 때만 serving isolation에 도움이 된다.
+- 공개 AI 표시 의무의 적용 여부는 실제 운영자·서비스 범위에 따라 판단한다. 표시가 다른 권리를 허가하지는 않는다. [Source 11]
+- 실제 서비스 전 한국 변호사의 배포 사실관계 검토가 필요하다.
+
+## 검증된 결론과 아직 잠정인 결론
+
+검증된 좁은 결론:
+
+- 공개 접근은 자동 수집·AI 재사용 허가와 같지 않다.
+- 공개 Search API는 complete owner export가 아니다.
+- owner PDF는 공식이지만 손실형이다.
+- 한국 저작권법에 범주형 AI 학습 세이프하버는 확인되지 않았다.
+- 공개 개인정보도 처리 근거와 목적 검토가 필요하다.
+- declared inventory/fixity는 global completeness가 아니다.
+- RAG는 grounding을 보장하지 않는다.
+- 1인칭 변환은 화자·현재성 의미를 추가한다.
+- approximate unlearning은 삭제 증명으로 충분하지 않다.
+- 이번 연구에서 실제 end-to-end 삭제 drill은 수행하지 않았다.
+
+잠정 release decision:
+
+> 실제 권한과 target golden set이 아직 없으므로, 다음 구현 단계는 비공개·출처 명시형·RAG 우선 analyst prototype까지만 진행한다. 공개 실명 1인칭 persona는 중단한다.
+
+## Sources
+
+1. [Naver Terms, current](https://policy.naver.com/rules/service.html)
+2. [Naver Terms, prior version](https://policy.naver.com/rules/service_pre_20250710.html)
+3. [Naver Blog Search API](https://developers.naver.com/docs/serviceapi/search/blog/blog.md)
+4. [Naver Blog owner PDF backup](https://help.naver.com/service/5593/contents/15293?lang=ko&osType=PC)
+5. [Korean Copyright Act Article 35-5](https://law.go.kr/lsLinkCommonInfo.do?chrClsCd=010202&lsJoLnkSeq=1025203559)
+6. [KCC 2026 AI copyright guide](https://www.copyright.or.kr/information-materials/publication/research-report/view.do?brdctsno=55211)
+7. [Supreme Court public personal-data case](https://www.law.go.kr/LSW/precInfoP.do?precSeq=183259)
+8. [PIPA Article 21](https://www.law.go.kr/LSW/lsLawLinkInfo.do?chrClsCd=010202&lsJoLnkSeq=900078981)
+9. [PIPA Article 26](https://www.law.go.kr/법령/개인정보보호법/제26조)
+10. [PIPC 2025 generative-AI privacy guide](https://pipc.go.kr/np/cop/bbs/selectBoardArticle.do?bbsId=BS217&mCode=G010030020&nttId=11439)
+11. [AI Basic Act, current](https://www.law.go.kr/LSW/lsInfoP.do?efYd=20260122&lsiSeq=282791&urlMode=lsInfoP)
+12. [BehaviorChain digital-twin benchmark](https://aclanthology.org/2025.findings-acl.813/)
+13. [PersonaGym](https://aclanthology.org/2025.findings-emnlp.368/)
+14. [Fine-Tuning or Retrieval?](https://arxiv.org/abs/2312.05934)
+15. [LaMP personalization](https://aclanthology.org/2024.acl-long.399/)
+16. [PersonaLLM](https://aclanthology.org/2024.findings-naacl.229/)
+17. [RAGTruth](https://aclanthology.org/2024.acl-long.585/)
+18. [Deduplication and memorization](https://proceedings.mlr.press/v162/kandpal22a.html)
+19. [MUSE machine-unlearning evaluation](https://arxiv.org/abs/2407.06460)
+20. [Forget Unlearning: Towards True Data-Deletion](https://proceedings.mlr.press/v202/chourasia23a.html)
+21. [Style-transfer content preservation counterevidence](https://aclanthology.org/N19-1049/)
+22. [Digital Preservation Coalition fixity guidance](https://www.dpconline.org/handbook/technical-solutions-and-tools/fixity-and-checksums)
+23. [Elasticsearch Nori tokenizer](https://www.elastic.co/docs/reference/elasticsearch/plugins/analysis-nori-tokenizer)
+24. [BGE-M3](https://arxiv.org/abs/2402.03216)
+25. [RFC 9309 Robots Exclusion Protocol](https://www.rfc-editor.org/rfc/rfc9309.html)
+26. [Naver Blog robots, observed 2026-07-13](https://blog.naver.com/robots.txt)
+27. [Korean Copyright Act Article 93, database producer right](https://law.go.kr/LSW/lsSideInfoP.do?docCls=jo&joBrNo=00&joNo=0093&lsiSeq=283335&urlMode=lsScJoRltInfoR)
+28. [Personal Information Protection Act, current](https://www.law.go.kr/법령/개인정보보호법)
+29. [Korean AI-voice contract scope case, 2025 provisional disposition](https://law.go.kr/LSW/precInfoP.do?mode=0&precSeq=613155)
+30. [ACL study on sentence-level attributed generation](https://aclanthology.org/2025.findings-naacl.55/)
+31. [INLG study on citation correctness and completeness](https://aclanthology.org/2024.inlg-main.35/)
+32. [NIST AI RMF Generative AI Profile](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence)
+33. [HELM: Holistic Evaluation of Language Models](https://arxiv.org/abs/2211.09110)
+34. [NeurIPS benchmark for prompt-injection security and utility](https://proceedings.neurips.cc/paper_files/paper/2024/hash/97091a5177d8dc64b1da8bf3e1f6fb54-Abstract-Datasets_and_Benchmarks_Track.html)
+35. [OWASP RAG Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/RAG_Security_Cheat_Sheet.html)
+36. [OWASP Vector and Embedding Weaknesses](https://genai.owasp.org/llmrisk/llm082025-vector-and-embedding-weaknesses/)
+37. [OWASP Excessive Agency](https://genai.owasp.org/llmrisk/llm062025-excessive-agency/)
+38. [Naver Blog visibility settings](https://help.naver.com/service/5593/contents/15541?lang=ko&osType=PC)

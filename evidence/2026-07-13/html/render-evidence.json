@@ -1,0 +1,65 @@
+{
+  "generatedAt": "2026-07-13T12:34:21.695Z",
+  "executablePath": "/home/akinella/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome",
+  "browserVersion": "149.0.7827.55",
+  "results": [
+    {
+      "width": 375,
+      "title": "네이버 블로그 기반 사고·문체 프록시 구현 청사진",
+      "lang": "ko",
+      "headings": 40,
+      "sourceAnchors": 38,
+      "citationLinks": 49,
+      "tables": 3,
+      "clientWidth": 375,
+      "scrollWidth": 375,
+      "scrollHeight": 25677,
+      "reportFontLoaded": true,
+      "preFontFamily": "\"Report Noto Sans KR\", D2Coding, \"Noto Sans Mono CJK KR\", monospace",
+      "horizontalOverflow": false,
+      "anchorVisible": true,
+      "hash": "#source-1"
+    },
+    {
+      "width": 768,
+      "title": "네이버 블로그 기반 사고·문체 프록시 구현 청사진",
+      "lang": "ko",
+      "headings": 40,
+      "sourceAnchors": 38,
+      "citationLinks": 49,
+      "tables": 3,
+      "clientWidth": 768,
+      "scrollWidth": 768,
+      "scrollHeight": 18640,
+      "reportFontLoaded": true,
+      "preFontFamily": "\"Report Noto Sans KR\", D2Coding, \"Noto Sans Mono CJK KR\", monospace",
+      "horizontalOverflow": false,
+      "anchorVisible": true,
+      "hash": "#source-1"
+    },
+    {
+      "width": 1280,
+      "title": "네이버 블로그 기반 사고·문체 프록시 구현 청사진",
+      "lang": "ko",
+      "headings": 40,
+      "sourceAnchors": 38,
+      "citationLinks": 49,
+      "tables": 3,
+      "clientWidth": 1280,
+      "scrollWidth": 1280,
+      "scrollHeight": 17900,
+      "reportFontLoaded": true,
+      "preFontFamily": "\"Report Noto Sans KR\", D2Coding, \"Noto Sans Mono CJK KR\", monospace",
+      "horizontalOverflow": false,
+      "anchorVisible": true,
+      "hash": "#source-1"
+    }
+  ],
+  "zoom200": {
+    "clientWidth": 768,
+    "scrollWidth": 768,
+    "horizontalOverflow": false
+  },
+  "consoleErrors": [],
+  "pdfPath": "/home/akinella/workspace/output/pdf/naver-blog-persona-research.pdf"
+}
