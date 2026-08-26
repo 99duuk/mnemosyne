@@ -1,10 +1,13 @@
-property bridgeHeader : "MNEMOSYNE_BRIDGE_V1"
+on bridgeHeader()
+	return "MNEMOSYNE_BRIDGE_V1"
+end bridgeHeader
 
 on bridgeError(code)
-	return bridgeHeader & linefeed & "ERROR" & linefeed & code
+	return my bridgeHeader() & linefeed & "ERROR" & linefeed & code
 end bridgeError
 
 on safariTab(expectedURL)
+	local selectedTab, currentURL
 	if application "Safari" is not running then return my bridgeError("NO_SAFARI_TAB")
 	try
 		tell application "Safari"
@@ -25,18 +28,19 @@ on safariTab(expectedURL)
 end safariTab
 
 on run arguments
+	local bridgeMode, tabResult, expectedURL, selectedTab, beforeURL, pageResult, extractorSource, rebound, afterURL
 	if (count of arguments) is 0 then error "invalid bridge mode"
 	set bridgeMode to item 1 of arguments
 	if bridgeMode is "notify" then
 		if (count of arguments) is not 3 then error "invalid notify arity"
-		«event sysonotf» (item 3 of arguments) given «class appr»:(item 2 of arguments)
-		return bridgeHeader & linefeed & "OK"
+		tell current application to «event sysonotf» (item 3 of arguments) given «class appr»:(item 2 of arguments)
+		return my bridgeHeader() & linefeed & "OK"
 	end if
 	if bridgeMode is "snapshot" then
 		if (count of arguments) is not 1 then error "invalid snapshot arity"
 		set tabResult to my safariTab(missing value)
 		if class of tabResult is text then return tabResult
-		return bridgeHeader & linefeed & "OK" & linefeed & item 2 of tabResult
+		return my bridgeHeader() & linefeed & "OK" & linefeed & item 2 of tabResult
 	end if
 	if bridgeMode is not "smoke" and bridgeMode is not "extract" then error "invalid bridge mode"
 	if bridgeMode is "smoke" and (count of arguments) is not 2 then error "invalid smoke arity"
@@ -68,8 +72,8 @@ on run arguments
 	set afterURL to item 2 of rebound
 	if bridgeMode is "smoke" then
 		if pageResult is not "MNEMOSYNE_JS_OK" then error "unexpected smoke result"
-		return bridgeHeader & linefeed & "OK" & linefeed & pageResult
+		return my bridgeHeader() & linefeed & "OK" & linefeed & pageResult
 	end if
 	if pageResult is "MNEMOSYNE_UNSUPPORTED_PAGE" then return my bridgeError("UNSUPPORTED_PAGE")
-	return bridgeHeader & linefeed & "OK" & linefeed & beforeURL & linefeed & afterURL & linefeed & pageResult
+	return my bridgeHeader() & linefeed & "OK" & linefeed & beforeURL & linefeed & afterURL & linefeed & pageResult
 end run

@@ -259,6 +259,18 @@ class BridgeTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8", "replace"))
             self.assertTrue(output.is_file())
 
+    def test_applescript_runtime_state_is_explicitly_local(self) -> None:
+        source = Path("capture/macos/capture.applescript").read_text(encoding="utf-8")
+
+        self.assertNotIn("property bridgeHeader", source)
+        self.assertIn("on bridgeHeader()", source)
+        self.assertIn("local selectedTab, currentURL", source)
+        self.assertIn(
+            "local bridgeMode, tabResult, expectedURL, selectedTab, beforeURL, pageResult, extractorSource, rebound, afterURL",
+            source,
+        )
+        self.assertIn("tell current application to «event sysonotf»", source)
+
 
 if __name__ == "__main__":
     unittest.main()
