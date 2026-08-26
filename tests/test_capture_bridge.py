@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import stat
@@ -182,6 +183,33 @@ class BridgeTests(unittest.TestCase):
             with self.assertRaises(ArtifactError):
                 bridge.snapshot()
         run.assert_not_called()
+
+    def test_expected_hash_rejects_same_mode_replacement_at_bind(self) -> None:
+        expected_capture = hashlib.sha256(self.capture_script.read_bytes()).hexdigest()
+        expected_extractor = hashlib.sha256(self.extractor_script.read_bytes()).hexdigest()
+        replacement = Path(self.temp.name) / "replacement.scpt"
+        replacement.write_bytes(b"mode-valid replacement")
+        replacement.chmod(0o600)
+        os.replace(replacement, self.capture_script)
+
+        with self.assertRaises(ArtifactError):
+            Bridge.bind(
+                self.capture_script,
+                self.extractor_script,
+                expected_capture_sha256=expected_capture,
+                expected_extractor_sha256=expected_extractor,
+            )
+
+    def test_expected_hash_rejects_malformed_boundary_values(self) -> None:
+        malformed = ("", "a" * 63, "a" * 65, "A" * 64, "g" * 64, 7)
+
+        for value in malformed:
+            with self.subTest(value=value), self.assertRaises(ArtifactError):
+                Bridge.bind(
+                    self.capture_script,
+                    self.extractor_script,
+                    expected_capture_sha256=value,
+                )
 
         bridge = Bridge.bind(self.capture_script, self.extractor_script)
         self.extractor_script.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP)

@@ -4,6 +4,7 @@ import hashlib
 import json
 import multiprocessing
 import os
+import queue
 import stat
 import tempfile
 import unittest
@@ -12,7 +13,7 @@ from pathlib import Path
 from unittest import mock
 
 from mnemosyne_capture import CapturePayload, CommandCode
-from mnemosyne_capture.store import CaptureStore
+from mnemosyne_capture.store import CaptureStore, StoreLockError
 
 # noqa: SIZE_OK — indivisible filesystem durability and adversarial contract matrix.
 
@@ -61,6 +62,12 @@ def concurrent_capture(root: str, gate, queue) -> None:
     queue.put((result.code.value, result.changed, result.revision_id))
 
 
+def export_after_signal(root: str, started, results) -> None:
+    started.set()
+    result = CaptureStore(Path(root)).export()
+    results.put((result.code.value, result.changed))
+
+
 def make_complete_stage(root: Path, stage_id: str) -> Path:
     stage = root / ".staging" / f"mnemosyne-stage-{stage_id}"
     stage.mkdir(parents=True, mode=0o700)
@@ -77,6 +84,77 @@ def make_complete_stage(root: Path, stage_id: str) -> Path:
 
 
 class CaptureStoreTests(unittest.TestCase):
+    def test_public_locked_create_modes_and_reentrancy(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="mnemosyne-store-") as directory:
+            root = Path(directory) / "data"
+            store = CaptureStore(root)
+            with self.assertRaises(StoreLockError) as missing:
+                with store.locked(create=False):
+                    self.fail("missing root must not yield")
+            self.assertFalse(missing.exception.changed)
+            self.assertFalse(root.exists())
+
+            with store.locked(create=True) as locked:
+                self.assertIs(locked, store)
+                self.assertEqual(mode(root), 0o700)
+                self.assertEqual(mode(root / ".commit.lock"), 0o600)
+                with self.assertRaises(StoreLockError) as nested:
+                    with store.locked(create=False):
+                        self.fail("nested lock must not yield")
+                self.assertFalse(nested.exception.changed)
+
+            (root / ".commit.lock").chmod(0o644)
+            with self.assertRaises(StoreLockError) as invalid:
+                with CaptureStore(root).locked(create=False):
+                    self.fail("invalid lock must not yield")
+            self.assertFalse(invalid.exception.changed)
+
+    def test_capture_and_export_inside_public_lock_do_not_reacquire(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="mnemosyne-store-") as directory:
+            root = Path(directory) / "data"
+            store = CaptureStore(root)
+            real_flock = __import__("fcntl").flock
+            acquisitions = 0
+
+            def count_flock(descriptor: int, operation: int) -> None:
+                nonlocal acquisitions
+                acquisitions += 1
+                real_flock(descriptor, operation)
+
+            with mock.patch("mnemosyne_capture.store.fcntl.flock", side_effect=count_flock):
+                with store.locked(create=True):
+                    captured = store.capture(payload())
+                    exported = store.export()
+
+            self.assertEqual(acquisitions, 1)
+            self.assertEqual(captured.code, CommandCode.CAPTURED)
+            self.assertEqual(exported.code, CommandCode.EXPORTED)
+
+    def test_public_lock_spans_callback_and_blocks_second_process(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="mnemosyne-store-") as directory:
+            root = Path(directory) / "data"
+            CaptureStore(root).export()
+            context = multiprocessing.get_context("spawn")
+            started = context.Event()
+            results = context.Queue()
+            process = context.Process(target=export_after_signal, args=(str(root), started, results))
+
+            try:
+                with CaptureStore(root).locked(create=False):
+                    process.start()
+                    self.assertTrue(started.wait(timeout=5))
+                    with self.assertRaises(queue.Empty):
+                        results.get(timeout=0.2)
+                process.join(timeout=5)
+
+                self.assertFalse(process.is_alive())
+                self.assertEqual(process.exitcode, 0)
+                self.assertEqual(results.get(timeout=1), (CommandCode.EXPORTED.value, False))
+            finally:
+                if process.is_alive():
+                    process.terminate()
+                    process.join(timeout=2)
+
     def test_capture_duplicate_revision_and_aba_are_immutable_and_monotonic(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mnemosyne-store-") as directory:
             root = Path(directory) / "data"

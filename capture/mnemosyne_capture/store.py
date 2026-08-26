@@ -8,7 +8,7 @@ import re
 import stat
 import struct
 import uuid
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -67,6 +67,12 @@ class _ExportFailure(Exception):
         self.changed = changed
 
 
+class StoreLockError(Exception):
+    def __init__(self, changed: bool) -> None:
+        super().__init__(changed)
+        self.changed = changed
+
+
 class CaptureStore:
     def __init__(self, root: Path, clock: Callable[[], datetime] | None = None) -> None:
         self.root = root.absolute()
@@ -76,7 +82,7 @@ class CaptureStore:
 
     def capture(self, payload: CapturePayload) -> StoreResult:
         try:
-            with self._lock():
+            with nullcontext() if self._root_fd is not None else self._lock(create=True):
                 bundles = self._scan()
                 revision_id = hashlib.sha256(revision_preimage(payload)).hexdigest()
                 existing = next((item for item in bundles if item.record["revision_id"] == revision_id), None)
@@ -107,7 +113,7 @@ class CaptureStore:
 
     def export(self) -> StoreResult:
         try:
-            with self._lock():
+            with nullcontext() if self._root_fd is not None else self._lock(create=True):
                 bundles = self._scan()
                 changed = self._export_bytes(bundles)
                 return StoreResult(CommandName.EXPORT, CommandCode.EXPORTED, True, changed, path=str(self.root / "posts.jsonl"))
@@ -120,9 +126,25 @@ class CaptureStore:
         except OSError:
             return self._failure(CommandName.EXPORT, CommandCode.WRITE_FAILED)
 
+    @contextmanager
+    def locked(self, *, create: bool) -> Iterator[CaptureStore]:
+        if self._root_fd is not None:
+            raise StoreLockError(False)
+        manager = self._lock(create=create)
+        try:
+            manager.__enter__()
+        except _WriteFailure as error:
+            raise StoreLockError(error.changed) from error
+        except (_Corrupt, OSError) as error:
+            raise StoreLockError(False) from error
+        try:
+            yield self
+        finally:
+            manager.__exit__(None, None, None)
+
     def stale_stages(self) -> tuple[str, ...]:
         try:
-            with self._lock():
+            with self._lock(create=True):
                 self._scan()
                 return tuple(name.removeprefix(_STAGE_PREFIX) for name in self._stage_names())
         except (_Corrupt, _WriteFailure, OSError):
@@ -137,7 +159,7 @@ class CaptureStore:
         try:
             if self._empty_or_absent_root():
                 return self._failure(command, CommandCode.STAGE_NOT_FOUND)
-            with self._lock():
+            with self._lock(create=True):
                 self._scan()
                 root_fd = self._require_root_fd()
                 if not self._entry_exists_at(root_fd, ".staging"):
@@ -206,7 +228,7 @@ class CaptureStore:
                                tuple(sorted((*payload.warnings, warning))))
 
     @contextmanager
-    def _lock(self) -> Iterator[None]:
+    def _lock(self, *, create: bool) -> Iterator[None]:
         created_root = False
         created_lock = False
         parent = self.root.parent
@@ -214,6 +236,8 @@ class CaptureStore:
             parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
             try:
                 if not self._entry_exists_at(parent_fd, self.root.name):
+                    if not create:
+                        raise _WriteFailure(False)
                     try:
                         os.mkdir(self.root.name, _DIR_MODE, dir_fd=parent_fd)
                         created_root = True
@@ -226,11 +250,16 @@ class CaptureStore:
                     entries = set(os.listdir(root_fd))
                     if ".commit.lock" not in entries and entries:
                         raise _Corrupt
-                    try:
-                        lock_fd = os.open(".commit.lock", os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, _FILE_MODE, dir_fd=root_fd)
-                        created_lock = True
-                    except FileExistsError:
+                    if ".commit.lock" in entries:
                         lock_fd = os.open(".commit.lock", os.O_RDWR | os.O_NOFOLLOW, dir_fd=root_fd)
+                    elif not create:
+                        raise _Corrupt
+                    else:
+                        try:
+                            lock_fd = os.open(".commit.lock", os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, _FILE_MODE, dir_fd=root_fd)
+                            created_lock = True
+                        except FileExistsError:
+                            lock_fd = os.open(".commit.lock", os.O_RDWR | os.O_NOFOLLOW, dir_fd=root_fd)
                     try:
                         fcntl.flock(lock_fd, fcntl.LOCK_EX)
                         self._validate_dir_fd(root_fd)

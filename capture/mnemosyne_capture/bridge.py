@@ -83,8 +83,14 @@ class _Artifact:
     digest: bytes
 
     @classmethod
-    def bind(cls, path: Path) -> _Artifact:
+    def bind(cls, path: Path, expected_sha256: str | None = None) -> _Artifact:
         if not path.is_absolute():
+            raise ArtifactError(path)
+        if expected_sha256 is not None and (
+            type(expected_sha256) is not str
+            or len(expected_sha256) != 64
+            or any(character not in "0123456789abcdef" for character in expected_sha256)
+        ):
             raise ArtifactError(path)
         flags = os.O_RDONLY | os.O_NOFOLLOW
         try:
@@ -101,10 +107,13 @@ class _Artifact:
             or stat.S_IMODE(status.st_mode) != 0o600
         ):
             raise ArtifactError(path)
-        return cls(path, status.st_dev, status.st_ino, hashlib.sha256(content).digest())
+        digest = hashlib.sha256(content).digest()
+        if expected_sha256 is not None and digest.hex() != expected_sha256:
+            raise ArtifactError(path)
+        return cls(path, status.st_dev, status.st_ino, digest)
 
     def revalidate(self) -> None:
-        current = type(self).bind(self.path)
+        current = type(self).bind(self.path, self.digest.hex())
         if (current.device, current.inode, current.digest) != (self.device, self.inode, self.digest):
             raise ArtifactError(self.path)
 
@@ -115,8 +124,18 @@ class Bridge:
     extractor_script: _Artifact
 
     @classmethod
-    def bind(cls, capture_script: Path, extractor_script: Path) -> Bridge:
-        return cls(_Artifact.bind(capture_script), _Artifact.bind(extractor_script))
+    def bind(
+        cls,
+        capture_script: Path,
+        extractor_script: Path,
+        *,
+        expected_capture_sha256: str | None = None,
+        expected_extractor_sha256: str | None = None,
+    ) -> Bridge:
+        return cls(
+            _Artifact.bind(capture_script, expected_capture_sha256),
+            _Artifact.bind(extractor_script, expected_extractor_sha256),
+        )
 
     def snapshot(self) -> SnapshotResult:
         lines = self._invoke("snapshot", ())
