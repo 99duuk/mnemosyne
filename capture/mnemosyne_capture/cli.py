@@ -14,9 +14,12 @@ from typing import Final, assert_never
 
 from .bridge import ArtifactError, Bridge, BridgeError, BridgeErrorCode
 from .enums import CommandCode, CommandName, WarningCode
+from .doctor import doctor, doctor_bytes
+from .install import InvalidPathError, bind_paths, install
 from .payload import CapturePayload
 from .store import CaptureStore, StoreLockError, StoreResult
 from .url import CaptureModelError, ModelErrorCode, parse_naver_url
+from .uninstall import uninstall
 
 
 _OWNER: Final = "github.com/99duuk/mnemosyne#mnemosyne-capture/v1"
@@ -40,13 +43,34 @@ def main(argv: Sequence[str] | None = None, *, capture_script: Path | None = Non
     if (capture_script is None) != (extractor_script is None):
         raise InternalArtifactPairError
     parser = argparse.ArgumentParser(prog="mnemosyne_capture")
-    parser.add_argument("--data-root", type=Path, default=Path.home() / "Library/Application Support/Mnemosyne")
-    parser.add_argument("command", choices=(CommandName.CAPTURE.value, CommandName.EXPORT.value))
+    parser.add_argument("--home", type=Path, default=Path.home())
+    parser.add_argument("--data-root", type=Path)
+    parser.add_argument("--json", action="store_true", dest="doctor_json")
+    parser.add_argument("--live", action="store_true")
+    parser.add_argument("--discard-stage")
+    parser.add_argument("command", choices=(CommandName.CAPTURE.value, CommandName.EXPORT.value,
+                                            CommandName.INSTALL.value, CommandName.UNINSTALL.value, "doctor"))
     arguments = parser.parse_args(argv)
-    root = arguments.data_root
+    root = arguments.data_root or arguments.home / "Library/Application Support/Mnemosyne"
+    if arguments.command == "doctor":
+        if arguments.discard_stage is not None:
+            return _finish(CaptureStore(root).discard_stage(arguments.discard_stage))
+        try:
+            result = doctor(bind_paths(arguments.home, arguments.data_root), live=arguments.live)
+        except (InvalidPathError, OSError):
+            sys.stdout.write('{"checks":[],"code":"INVALID_PATH","ok":false,"schema":"mnemosyne.doctor/v1"}\n')
+            return 1
+        sys.stdout.write(doctor_bytes(result).decode())
+        return 0 if result.code == "READY" else 2 if result.code == "LIVE_PREREQUISITE_MISSING" else 1
     command = CommandName(arguments.command)
     if not _valid_root(root):
         return _finish(_failure(command, CommandCode.INVALID_PATH))
+    if command in (CommandName.INSTALL, CommandName.UNINSTALL):
+        try:
+            paths = bind_paths(arguments.home, arguments.data_root)
+        except (InvalidPathError, OSError):
+            return _finish(_failure(command, CommandCode.INVALID_PATH))
+        return _finish(install(paths) if command is CommandName.INSTALL else uninstall(paths))
     if sys.version_info[:2] != (3, 14):
         return _finish(_failure(command, CommandCode.PYTHON_VERSION_MISMATCH))
     store = CaptureStore(root)
@@ -61,6 +85,8 @@ def main(argv: Sequence[str] | None = None, *, capture_script: Path | None = Non
                     return _finish(_failure(command, CommandCode.RUNTIME_TAMPERED))
                 return _capture_injected(store, bridge)
             return _capture_production(store)
+        case CommandName.INSTALL | CommandName.UNINSTALL | CommandName.DOCTOR_DISCARD_STAGE:
+            raise AssertionError(command)
         case unreachable:
             assert_never(unreachable)
 

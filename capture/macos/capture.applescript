@@ -10,9 +10,9 @@ on safariTab(expectedURL)
 		tell application "Safari"
 			if frontmost is false then return my bridgeError("SAFARI_NOT_FRONTMOST")
 			if (count of windows) is 0 then return my bridgeError("NO_SAFARI_TAB")
-			set selectedTab to current tab of front window
+			set selectedTab to «class cTab» of front window
 			if selectedTab is missing value then return my bridgeError("NO_SAFARI_TAB")
-			set currentURL to URL of selectedTab
+			set currentURL to «class pURL» of selectedTab
 		end tell
 	on error errorText number errorNumber
 		if errorNumber is -1743 then return my bridgeError("APPLE_EVENTS_DENIED")
@@ -29,7 +29,7 @@ on run arguments
 	set bridgeMode to item 1 of arguments
 	if bridgeMode is "notify" then
 		if (count of arguments) is not 3 then error "invalid notify arity"
-		display notification (item 3 of arguments) with title (item 2 of arguments)
+		«event sysonotf» (item 3 of arguments) given «class appr»:(item 2 of arguments)
 		return bridgeHeader & linefeed & "OK"
 	end if
 	if bridgeMode is "snapshot" then
@@ -49,12 +49,12 @@ on run arguments
 	try
 		if bridgeMode is "smoke" then
 			tell application "Safari"
-				set pageResult to do JavaScript "'MNEMOSYNE_JS_OK'" in selectedTab
+				set pageResult to «event sfridojs» "'MNEMOSYNE_JS_OK'" given «class dcnm»:selectedTab
 			end tell
 		else
-			set extractorSource to read POSIX file (item 3 of arguments) as «class utf8»
+			set extractorSource to «event rdwrread» («class psxf» (item 3 of arguments)) given «class as  »:«class utf8»
 			tell application "Safari"
-				set pageResult to do JavaScript extractorSource in selectedTab
+				set pageResult to «event sfridojs» extractorSource given «class dcnm»:selectedTab
 			end tell
 		end if
 	on error errorText number errorNumber
