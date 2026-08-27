@@ -69,7 +69,7 @@ def install(paths: InstallPaths) -> StoreResult:
                 raise ForeignWorkflowError
             with CaptureStore(paths.data_root).locked(create=True):
                 result = _install_locked(paths, built, coordination_changed=not coordination_existed)
-        if result.changed and paths.home == Path.home():
+        if result.ok and paths.home == Path.home():
             subprocess.run(["/System/Library/CoreServices/pbs", "-update"], check=True, timeout=10,
                            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         return result
