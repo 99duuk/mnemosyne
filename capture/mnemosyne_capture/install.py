@@ -4,6 +4,7 @@ import fcntl
 import json
 import os
 import stat
+import subprocess
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Final, Iterator
@@ -65,7 +66,11 @@ def install(paths: InstallPaths) -> StoreResult:
             if reserved and (not paths.data_root.exists() or (not lock.exists() and not any(paths.data_root.iterdir()))):
                 raise ForeignWorkflowError
             with CaptureStore(paths.data_root).locked(create=True):
-                return _install_locked(paths, built, coordination_changed=not coordination_existed)
+                result = _install_locked(paths, built, coordination_changed=not coordination_existed)
+        if result.changed and paths.home == Path.home():
+            subprocess.run(["/System/Library/CoreServices/pbs", "-update"], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        return result
     except InvalidPathError:
         return StoreResult(command, CommandCode.INVALID_PATH, False, False)
     except PathDriftError as error:
@@ -79,7 +84,7 @@ def install(paths: InstallPaths) -> StoreResult:
         return StoreResult(command, CommandCode.RUNTIME_TAMPERED, False, False)
     except StoreLockError as error:
         return StoreResult(command, CommandCode.WRITE_FAILED, False, error.changed)
-    except OSError:
+    except (OSError, subprocess.SubprocessError):
         return StoreResult(command, CommandCode.WRITE_FAILED, False,
                            'built' in locals() and _install_signature(paths, built) != baseline)
 
