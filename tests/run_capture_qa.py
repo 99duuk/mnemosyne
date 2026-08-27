@@ -160,7 +160,7 @@ def verify_installed() -> dict:
         if digest(data) != expected["sha256"] or expected["mode"] != "0600":
             raise RuntimeError(f"artifact mismatch: {name}")
         hashes[name] = digest(data)
-    workflow_files = {"document.wflow": "document_sha256", "Info.plist": "info_plist_sha256", "Resources/mnemosyne-owner.json": "owner_marker_sha256"}
+    workflow_files = {"Resources/document.wflow": "document_sha256", "Info.plist": "info_plist_sha256", "Resources/mnemosyne-owner.json": "owner_marker_sha256"}
     for name, field in workflow_files.items():
         data, _ = bound_bytes(WORKFLOW / "Contents" / name, expected_mode=0o600)
         if digest(data) != manifest["workflow"][field]:
@@ -246,7 +246,7 @@ def qa(attempt_dir: Path, verify_install: bool) -> int:
         Command("node-check", ("/Users/tars/.nvm/versions/node/v22.22.0/bin/node", "--check", "capture/extract-current-page.js"), 120),
         Command("node-dom-tests", ("/Users/tars/.nvm/versions/node/v22.22.0/bin/node", "--test", "tests/test_extract_current_page.mjs"), 120),
         Command("applescript-compile", ("/usr/bin/osacompile", "-o", str(compiled), "capture/macos/capture.applescript"), 120),
-        Command("source-plists", ("/usr/bin/plutil", "-lint", "capture/macos/Mnemosyne Capture.workflow/Contents/document.wflow", "capture/macos/Mnemosyne Capture.workflow/Contents/Info.plist"), 120),
+        Command("source-plists", ("/usr/bin/plutil", "-lint", "capture/macos/Mnemosyne Capture.workflow/Contents/Resources/document.wflow", "capture/macos/Mnemosyne Capture.workflow/Contents/Info.plist"), 120),
     )
     command_records: list[dict] = []
     command_ok: dict[str, bool] = {}
@@ -263,7 +263,7 @@ def qa(attempt_dir: Path, verify_install: bool) -> int:
             installed_ok = True
         except (OSError, RuntimeError, KeyError, TypeError, json.JSONDecodeError):
             installed_ok = False
-        installed_plist = Command("installed-plists", ("/usr/bin/plutil", "-lint", str(WORKFLOW / "Contents/document.wflow"), str(WORKFLOW / "Contents/Info.plist")), 120)
+        installed_plist = Command("installed-plists", ("/usr/bin/plutil", "-lint", str(WORKFLOW / "Contents/Resources/document.wflow"), str(WORKFLOW / "Contents/Info.plist")), 120)
         record, passed = run_command(installed_plist, environment)
         command_records.append(record)
         installed_ok = installed_ok and passed

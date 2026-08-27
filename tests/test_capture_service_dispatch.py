@@ -25,11 +25,15 @@ def private_home(root: Path) -> Path:
 
 class CaptureServiceDispatchTests(unittest.TestCase):
     def test_published_workflow_dispatches_through_native_automator(self) -> None:
-        # Given: a synthetic no-input workflow whose only effect is a private temporary sentinel.
+        # Given: Apple's installed workflow layout and a synthetic no-input sentinel workflow.
         with tempfile.TemporaryDirectory(prefix="mnemosyne-automator-") as directory:
             root = Path(directory)
             workflow = root / "Synthetic.workflow"
             sentinel = root / "dispatched"
+            platform_documents = sorted(Path("/System/Library/Services").glob(
+                "*.workflow/Contents/Resources/document.wflow"))
+            self.assertTrue(platform_documents)
+            platform_layout = platform_documents[0].parts[-3:]
             document = plistlib.dumps(workflow_plist(f"/usr/bin/touch '{sentinel}'"), fmt=plistlib.FMT_XML,
                                       sort_keys=True)
             built = BuiltRelease("synthetic", (), b"", document,
@@ -39,7 +43,9 @@ class CaptureServiceDispatchTests(unittest.TestCase):
             # When: macOS runs the published bundle through the native Automator surface.
             result = subprocess.run(["/usr/bin/automator", str(workflow)], capture_output=True, timeout=10)
 
-            # Then: the workflow dispatches exactly once to its sentinel command.
+            # Then: publishing matches Apple's executable layout and dispatches to the sentinel.
+            self.assertTrue(workflow.joinpath(*platform_layout).is_file())
+            self.assertFalse((workflow / "Contents/document.wflow").exists())
             self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8", "replace"))
             self.assertTrue(sentinel.is_file())
 
@@ -58,8 +64,66 @@ class CaptureServiceDispatchTests(unittest.TestCase):
 
             # Then: only the changed publication asks macOS to refresh Services.
             self.assertTrue(first.ok and second.ok)
-            native.run.assert_called_once_with(["/System/Library/CoreServices/pbs", "-update"], check=True,
+            native.run.assert_called_once_with(["/System/Library/CoreServices/pbs", "-update"], check=True, timeout=10,
                                                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+
+    def test_services_update_timeout_maps_to_changed_write_failure(self) -> None:
+        # Given: a changed default install whose bounded native Services update times out.
+        with tempfile.TemporaryDirectory(prefix="mnemosyne-install-") as directory:
+            home = private_home(Path(directory))
+            paths = bind_paths(home, None)
+            with patch.object(Path, "home", return_value=home), patch.object(install_module, "subprocess") as native:
+                native.DEVNULL = subprocess.DEVNULL
+                native.PIPE = subprocess.PIPE
+                native.SubprocessError = subprocess.SubprocessError
+                native.run.side_effect = subprocess.TimeoutExpired("pbs", 10)
+
+                # When: the install reaches Services publication.
+                result = install(paths)
+
+            # Then: the existing write-failure boundary reports the committed mutation.
+            self.assertEqual((result.code.value, result.ok, result.changed), ("WRITE_FAILED", False, True))
+
+    def test_install_repairs_owned_legacy_workflow_layout(self) -> None:
+        # Given: a valid owned installation in the legacy root-document layout.
+        with tempfile.TemporaryDirectory(prefix="mnemosyne-install-") as directory:
+            home = private_home(Path(directory))
+            paths = bind_paths(home, None)
+            with patch("mnemosyne_capture.install_artifacts._zipapp_bytes", return_value=b"previous-runtime"):
+                first = install(paths)
+            resources = paths.workflow / "Contents/Resources"
+            legacy = paths.workflow / "Contents/document.wflow"
+            (resources / "document.wflow").rename(legacy)
+
+            # When: the existing safe installer repairs the owned installation.
+            repaired = install(paths)
+
+            # Then: only the platform-canonical document location remains.
+            self.assertTrue(first.ok)
+            self.assertEqual((repaired.code.value, repaired.ok, repaired.changed), ("INSTALLED", True, True))
+            self.assertTrue((resources / "document.wflow").is_file())
+            self.assertFalse(legacy.exists())
+
+    def test_install_refuses_tampered_legacy_workflow_layout(self) -> None:
+        # Given: a legacy-shaped workflow whose document no longer matches its signed manifest.
+        with tempfile.TemporaryDirectory(prefix="mnemosyne-install-") as directory:
+            home = private_home(Path(directory))
+            paths = bind_paths(home, None)
+            first = install(paths)
+            canonical = paths.workflow / "Contents/Resources/document.wflow"
+            legacy = paths.workflow / "Contents/document.wflow"
+            canonical.rename(legacy)
+            legacy.write_bytes(legacy.read_bytes() + b"tampered")
+
+            # When: repair is attempted against the owned manifest.
+            refused = install(paths)
+
+            # Then: authentication fails without moving the untrusted document.
+            self.assertTrue(first.ok)
+            self.assertEqual((refused.code.value, refused.ok, refused.changed),
+                             ("RUNTIME_TAMPERED", False, False))
+            self.assertTrue(legacy.is_file())
+            self.assertFalse(canonical.exists())
 
 
 if __name__ == "__main__":

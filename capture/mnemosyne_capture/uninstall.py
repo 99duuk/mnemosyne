@@ -157,7 +157,8 @@ def _resume(paths: InstallPaths, plan: dict) -> StoreResult:
             _require_paths(paths, True)
     if tombstone.exists():
         _validate_workflow_cursor(tombstone, workflow)
-        for relative in ("Contents/document.wflow", "Contents/Info.plist", "Contents/Resources/mnemosyne-owner.json"):
+        for relative in ("Contents/Resources/document.wflow", "Contents/Resources/mnemosyne-owner.json",
+                         "Contents/Info.plist"):
             target = tombstone / relative
             if target.exists():
                 _unlink_guarded(paths, target, True)
@@ -260,14 +261,15 @@ def _validate_workflow_cursor(tombstone: Path, hashes: dict) -> None:
         return
     contents = tombstone / "Contents"
     entries = set(os.listdir(contents))
-    if entries not in ({"document.wflow", "Info.plist", "Resources"}, {"Info.plist", "Resources"}, {"Resources"}, set()):
+    if entries not in ({"Info.plist", "Resources"}, {"Resources"}, set()):
         raise UninstallTamperedError
     resources = contents / "Resources"
-    if resources.exists() and set(os.listdir(resources)) not in ({"mnemosyne-owner.json"}, set()):
+    if resources.exists() and set(os.listdir(resources)) not in (
+            {"document.wflow", "mnemosyne-owner.json"}, {"mnemosyne-owner.json"}, set()):
         raise UninstallTamperedError
-    present = {relative for relative in ("Contents/document.wflow", "Contents/Info.plist",
+    present = {relative for relative in ("Contents/Resources/document.wflow", "Contents/Info.plist",
                "Contents/Resources/mnemosyne-owner.json") if (tombstone / relative).exists()}
-    expected = {"Contents/document.wflow": "document_sha256", "Contents/Info.plist": "info_plist_sha256",
+    expected = {"Contents/Resources/document.wflow": "document_sha256", "Contents/Info.plist": "info_plist_sha256",
                 "Contents/Resources/mnemosyne-owner.json": "owner_marker_sha256"}
     for relative in present:
         if hashlib.sha256(read_private(tombstone / relative)).hexdigest() != hashes.get(expected[relative]):

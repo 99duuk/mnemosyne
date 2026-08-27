@@ -116,9 +116,9 @@ def publish_workflow_stage(stage: Path, built: BuiltRelease,
     _mkdir_or_validate(contents)
     guard()
     _mkdir_or_validate(resources)
-    _validate_stage_entries(contents, {"document.wflow": built.document, "Info.plist": built.info}, {"Resources"})
-    _validate_stage_entries(resources, {"mnemosyne-owner.json": OWNER_BYTES})
-    for path, content in ((contents / "document.wflow", built.document),
+    _validate_stage_entries(contents, {"Info.plist": built.info}, {"Resources"})
+    _validate_stage_entries(resources, {"document.wflow": built.document, "mnemosyne-owner.json": OWNER_BYTES})
+    for path, content in ((resources / "document.wflow", built.document),
                           (contents / "Info.plist", built.info),
                           (resources / "mnemosyne-owner.json", OWNER_BYTES)):
         guard()
@@ -165,10 +165,33 @@ def validate_workflow(workflow: Path, built: BuiltRelease) -> None:
                                       "owner_marker_sha256": hashlib.sha256(OWNER_BYTES).hexdigest()})
 
 
+def validate_legacy_workflow(workflow: Path, built: BuiltRelease) -> None:
+    validate_legacy_workflow_hashes(workflow, {"document_sha256": hashlib.sha256(built.document).hexdigest(),
+                                             "info_plist_sha256": hashlib.sha256(built.info).hexdigest(),
+                                             "owner_marker_sha256": hashlib.sha256(OWNER_BYTES).hexdigest()})
+
+
 def validate_workflow_hashes(workflow: Path, hashes: dict) -> None:
     if not workflow.exists():
         raise ArtifactTamperedError
-    for directory, entries in ((workflow, {"Contents"}), (workflow / "Contents", {"document.wflow", "Info.plist", "Resources"}),
+    for directory, entries in ((workflow, {"Contents"}), (workflow / "Contents", {"Info.plist", "Resources"}),
+                               (workflow / "Contents/Resources", {"document.wflow", "mnemosyne-owner.json"})):
+        status = directory.stat(follow_symlinks=False)
+        if (not stat.S_ISDIR(status.st_mode) or status.st_uid != os.getuid()
+                or stat.S_IMODE(status.st_mode) != 0o700 or set(os.listdir(directory)) != entries):
+            raise ArtifactTamperedError
+    expected = {"Contents/Resources/document.wflow": "document_sha256", "Contents/Info.plist": "info_plist_sha256",
+                "Contents/Resources/mnemosyne-owner.json": "owner_marker_sha256"}
+    for relative, field in expected.items():
+        if hashlib.sha256(read_private(workflow / relative)).hexdigest() != hashes.get(field):
+            raise ArtifactTamperedError
+
+
+def validate_legacy_workflow_hashes(workflow: Path, hashes: dict) -> None:
+    if not workflow.exists():
+        raise ArtifactTamperedError
+    for directory, entries in ((workflow, {"Contents"}),
+                               (workflow / "Contents", {"document.wflow", "Info.plist", "Resources"}),
                                (workflow / "Contents/Resources", {"mnemosyne-owner.json"})):
         status = directory.stat(follow_symlinks=False)
         if (not stat.S_ISDIR(status.st_mode) or status.st_uid != os.getuid()

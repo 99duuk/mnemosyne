@@ -94,7 +94,7 @@ class CaptureInstallTests(unittest.TestCase):
             self.assertEqual((installed_doctor.returncode, json.loads(installed_doctor.stdout)["code"]), (0, "READY"),
                              installed_doctor.stdout.decode())
             self.assertEqual((workflow / "Contents/Resources/mnemosyne-owner.json").read_bytes(), OWNER_BYTES)
-            document = plistlib.loads((workflow / "Contents/document.wflow").read_bytes())
+            document = plistlib.loads((workflow / "Contents/Resources/document.wflow").read_bytes())
             command = document["actions"][0]["action"]["ActionParameters"]["COMMAND_STRING"]
             self.assertEqual(command, f"'{os.path.realpath(os.sys.executable)}' '{data_root}/runtime/current/mnemosyne.pyz' --data-root '{data_root}' capture")
             info = plistlib.loads((workflow / "Contents/Info.plist").read_bytes())
@@ -102,7 +102,7 @@ class CaptureInstallTests(unittest.TestCase):
             for path in (data_root, data_root / "runtime", data_root / "runtime/releases", release, workflow,
                          workflow / "Contents", workflow / "Contents/Resources"):
                 self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700)
-            for path in (*release.iterdir(), workflow / "Contents/document.wflow", workflow / "Contents/Info.plist",
+            for path in (*release.iterdir(), workflow / "Contents/Resources/document.wflow", workflow / "Contents/Info.plist",
                          workflow / "Contents/Resources/mnemosyne-owner.json"):
                 self.assertEqual((stat.S_IMODE(path.stat().st_mode), path.stat().st_nlink), (0o600, 1))
 
@@ -137,8 +137,8 @@ class CaptureInstallTests(unittest.TestCase):
             # When: the workflow is installed and both source and installed plists are linted.
             invoke(["--home", str(home), "install"])
             installed = home / "Library/Services/Mnemosyne Capture.workflow/Contents"
-            lint = subprocess.run(["/usr/bin/plutil", "-lint", str(source / "document.wflow"), str(source / "Info.plist"),
-                                   str(installed / "document.wflow"), str(installed / "Info.plist")], capture_output=True)
+            lint = subprocess.run(["/usr/bin/plutil", "-lint", str(source / "Resources/document.wflow"), str(source / "Info.plist"),
+                                   str(installed / "Resources/document.wflow"), str(installed / "Info.plist")], capture_output=True)
 
             # Then: native parsing succeeds and Info.plist has exactly the locked plistlib bytes.
             self.assertEqual(lint.returncode, 0, lint.stderr.decode("utf-8", "replace"))
@@ -578,7 +578,7 @@ class CaptureInstallTests(unittest.TestCase):
                     publish_release(runtime, releases, final, built)
                     self.assertEqual((final / name).read_bytes(), content)
 
-            workflow_files = (("Contents/document.wflow", built.document),
+            workflow_files = (("Contents/Resources/document.wflow", built.document),
                               ("Contents/Info.plist", built.info),
                               ("Contents/Resources/mnemosyne-owner.json", OWNER_BYTES))
             for index, (relative, content) in enumerate(workflow_files):
@@ -634,7 +634,7 @@ class CaptureInstallTests(unittest.TestCase):
             self.assertFalse(data2.exists())
 
         # Given/When/Then: hardlinks across every workflow and plan class preserve both aliases on refusal.
-        for relative in ("Contents/document.wflow", "Contents/Info.plist",
+        for relative in ("Contents/Resources/document.wflow", "Contents/Info.plist",
                          "Contents/Resources/mnemosyne-owner.json"):
             with self.subTest(relative=relative), tempfile.TemporaryDirectory(prefix="mnemosyne-install-") as directory:
                 base = Path(directory)
@@ -844,7 +844,7 @@ class CaptureInstallTests(unittest.TestCase):
                 home = private_home(Path(directory))
                 if owned:
                     invoke(["--home", str(home), "install"])
-                    document = home / "Library/Services/Mnemosyne Capture.workflow/Contents/document.wflow"
+                    document = home / "Library/Services/Mnemosyne Capture.workflow/Contents/Resources/document.wflow"
                     document.write_bytes(b"drift")
                     document.chmod(0o600)
                 else:
@@ -1368,7 +1368,7 @@ class CaptureInstallTests(unittest.TestCase):
                     (runtime / "current").rename(runtime / ".current.installing")
                     stage = workflow.with_name(".Mnemosyne Capture.workflow.installing")
                     workflow.rename(stage)
-                    target = stage / "Contents/document.wflow"
+                    target = stage / "Contents/Resources/document.wflow"
                     content = target.read_bytes()
                     target.unlink()
                     target = target.with_name("document.wflow.writing")

@@ -21,6 +21,8 @@ from .install_artifacts import (
     read_private,
     sync,
     validate_manifest_release,
+    validate_legacy_workflow,
+    validate_legacy_workflow_hashes,
     validate_release,
     validate_workflow,
     validate_workflow_hashes,
@@ -68,7 +70,7 @@ def install(paths: InstallPaths) -> StoreResult:
             with CaptureStore(paths.data_root).locked(create=True):
                 result = _install_locked(paths, built, coordination_changed=not coordination_existed)
         if result.changed and paths.home == Path.home():
-            subprocess.run(["/System/Library/CoreServices/pbs", "-update"], check=True,
+            subprocess.run(["/System/Library/CoreServices/pbs", "-update"], check=True, timeout=10,
                            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         return result
     except InvalidPathError:
@@ -124,8 +126,9 @@ def _install_locked(paths: InstallPaths, built: BuiltRelease, *, coordination_ch
             sync(paths.services)
             _require_paths(paths, True)
             return StoreResult(CommandName.INSTALL, CommandCode.INSTALLED, True, True, path=str(paths.workflow))
-        validate_workflow(paths.workflow, built)
-        return StoreResult(CommandName.INSTALL, CommandCode.INSTALLED, True, had_release_stage, path=str(paths.workflow))
+        layout_changed = _repair_legacy_workflow_layout(paths, built)
+        return StoreResult(CommandName.INSTALL, CommandCode.INSTALLED, True, had_release_stage or layout_changed,
+                           path=str(paths.workflow))
     if witness.is_symlink() and os.readlink(witness) == target and final_release.exists():
         cleanup_published_release(runtime, releases, final_release, built, lambda: _require_paths(paths, False))
         _require_paths(paths, False)
@@ -147,18 +150,25 @@ def _install_locked(paths: InstallPaths, built: BuiltRelease, *, coordination_ch
         _require_paths(paths, True)
         return StoreResult(CommandName.INSTALL, CommandCode.INSTALLED, True, True, path=str(paths.workflow))
     if current.is_symlink() and paths.workflow.exists() and not witness.exists():
-        _stable_release(paths)
-        if final_release.exists():
-            cleanup_published_release(runtime, releases, final_release, built, lambda: _require_paths(paths, False))
-        else:
-            publish_release(runtime, releases, final_release, built, lambda: _require_paths(paths, True))
-        validate_workflow(paths.workflow, built)
-        witness.symlink_to(target)
-        sync(runtime)
-        _require_paths(paths, True)
-        os.replace(witness, current)
-        sync(runtime)
-        _require_paths(paths, True)
+        _stable_release(paths, allow_legacy_workflow=True)
+        layout_changed = _repair_legacy_workflow_layout(paths, built)
+        try:
+            if final_release.exists():
+                cleanup_published_release(runtime, releases, final_release, built,
+                                          lambda: _require_paths(paths, layout_changed))
+            else:
+                publish_release(runtime, releases, final_release, built, lambda: _require_paths(paths, True))
+            validate_workflow(paths.workflow, built)
+            witness.symlink_to(target)
+            sync(runtime)
+            _require_paths(paths, True)
+            os.replace(witness, current)
+            sync(runtime)
+            _require_paths(paths, True)
+        except (ArtifactTamperedError, OSError) as error:
+            if layout_changed:
+                raise InstallMutationError from error
+            raise
         return StoreResult(CommandName.INSTALL, CommandCode.INSTALLED, True, True, path=str(paths.workflow))
     if current.exists() or current.is_symlink() or paths.workflow.exists():
         raise RuntimeTamperedError
@@ -195,7 +205,27 @@ def _require_paths(paths: InstallPaths, changed: bool) -> None:
         raise PathDriftError(changed) from error
 
 
-def _stable_release(paths: InstallPaths) -> tuple[Path, dict] | None:
+def _repair_legacy_workflow_layout(paths: InstallPaths, built: BuiltRelease) -> bool:
+    try:
+        validate_workflow(paths.workflow, built)
+        return False
+    except ArtifactTamperedError:
+        validate_legacy_workflow(paths.workflow, built)
+    _require_paths(paths, False)
+    source = paths.workflow / "Contents/document.wflow"
+    target = paths.workflow / "Contents/Resources/document.wflow"
+    source.rename(target)
+    try:
+        sync(target.parent)
+        sync(source.parent)
+        _require_paths(paths, True)
+        validate_workflow(paths.workflow, built)
+    except (ArtifactTamperedError, OSError) as error:
+        raise InstallMutationError from error
+    return True
+
+
+def _stable_release(paths: InstallPaths, *, allow_legacy_workflow: bool = False) -> tuple[Path, dict] | None:
     current = paths.data_root / "runtime/current"
     if not current.is_symlink():
         _reject_clean_reserved(paths)
@@ -214,7 +244,12 @@ def _stable_release(paths: InstallPaths) -> tuple[Path, dict] | None:
     if not isinstance(workflow, dict) or workflow.get("path") != str(paths.workflow):
         raise InvalidPathError
     validate_manifest_release(release, manifest)
-    validate_workflow_hashes(paths.workflow, workflow)
+    try:
+        validate_workflow_hashes(paths.workflow, workflow)
+    except ArtifactTamperedError:
+        if not allow_legacy_workflow:
+            raise
+        validate_legacy_workflow_hashes(paths.workflow, workflow)
     return release, manifest
 
 
