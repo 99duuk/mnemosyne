@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mnemosyne 저장 자료 검수</title>
+  <style>
+    :root { color-scheme: light dark; --line: #d9dee7; --muted: #667085; --accent: #1769aa; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f5f7fb; color: #172033; font: 14px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    header { padding: 22px 28px 16px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: rgba(255,255,255,.96); backdrop-filter: blur(10px); z-index: 2; }
+    h1 { margin: 0 0 4px; font-size: 22px; letter-spacing: -.02em; } h2 { margin: 0 0 12px; font-size: 20px; letter-spacing: -.015em; } h3 { margin: 20px 0 8px; font-size: 14px; }
+    p { margin: 4px 0; } .muted { color: var(--muted); }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+    input, button { font: inherit; padding: 9px 11px; border: 1px solid #cbd3df; border-radius: 8px; background: #fff; color: #172033; }
+    button { cursor: pointer; } button:hover { border-color: var(--accent); box-shadow: 0 1px 4px #1769aa22; }
+    #search { min-width: 260px; flex: 1; } #file { max-width: 360px; }
+    main { display: grid; grid-template-columns: minmax(360px, 42%) 1fr; min-height: calc(100vh - 140px); max-width: 1500px; margin: 0 auto; background: #fff; box-shadow: 0 0 30px #2632480d; }
+    section { padding: 20px 24px; min-width: 0; } #list { border-right: 1px solid var(--line); overflow: auto; }
+    .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 10px 0 16px; }
+    .stat { padding: 10px 11px; border: 1px solid var(--line); border-radius: 9px; background: #fbfcfe; font-size: 12px; }
+    .ok { color: #16794b; } .bad { color: #b42318; }
+    .row { display: block; width: 100%; text-align: left; border: 1px solid transparent; border-bottom-color: var(--line); border-radius: 8px; padding: 12px 10px; margin: 3px 0; }
+    .row.selected { background: #eaf4fb; border-color: #b9d9ed; }
+    .row-title { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .row-meta { color: var(--muted); font-size: 12px; margin-top: 3px; }
+    .tag { display: inline-block; margin: 5px 4px 0 0; padding: 2px 6px; border: 1px solid #d8dee8; border-radius: 5px; font-size: 11px; background: #fff; }
+    #detail { overflow: auto; background: #fff; } #body { white-space: pre-wrap; word-break: break-word; margin: 0; padding: 18px 20px 28px; border: 1px solid var(--line); border-radius: 10px; background: #fcfdff; font: 15px/1.85 ui-sans-serif, system-ui, sans-serif; }
+    dl { display: grid; grid-template-columns: 120px 1fr; gap: 7px 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: #fbfcfe; } dt { color: var(--muted); } dd { margin: 0; word-break: break-all; }
+    .detail-head { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; } .detail-badge { flex: none; padding: 5px 8px; border-radius: 6px; font-size: 12px; background: #e8f7ef; color: #16794b; } .detail-badge.bad { background: #fff0ef; color: #b42318; }
+    @media (max-width: 800px) { header { padding: 18px 16px 12px; } main { display: block; } #list { border-right: 0; border-bottom: 1px solid var(--line); max-height: 48vh; } section { padding: 16px; } .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Mnemosyne 저장 자료 검수</h1>
+    <p class="muted">브라우저에서만 읽습니다. 파일은 서버로 전송하지 않습니다.</p>
+    <div class="toolbar">
+      <input id="file" type="file" accept=".jsonl,.ndjson,.json" multiple>
+      <input id="search" type="search" placeholder="제목·본문·문서 ID 검색" disabled>
+      <button id="clear" type="button">초기화</button>
+    </div>
+    <div id="message" class="muted">posts.jsonl을 선택하세요. report.json도 함께 선택하면 실행 검증 결과를 표시합니다.</div>
+  </header>
+  <main>
+    <section id="list"><div id="stats" class="stats"></div><div id="rows" class="muted">자료가 없습니다.</div></section>
+    <section id="detail"><h2>문서를 선택하세요</h2><p class="muted">왼쪽 목록에서 글을 누르면 원문과 메타데이터를 확인할 수 있습니다.</p></section>
+  </main>
+  <script>
+    const state = { records: [], report: null, selected: null };
+    const $ = selector => document.querySelector(selector);
+    const esc = value => String(value ?? '');
+    const fileInput = $('#file');
+    const search = $('#search');
+
+    async function digestRevision(record) {
+      const source = JSON.stringify([record.title, record.published_at_raw, record.body]);
+      const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(source));
+      return [...new Uint8Array(hash)].map(x => x.toString(16).padStart(2, '0')).join('');
+    }
+
+    async function parseFiles(files) {
+      state.records = []; state.report = null; state.selected = null;
+      for (const file of files) {
+        const text = await file.text();
+        if (file.name === 'report.json') { try { state.report = JSON.parse(text); } catch {} continue; }
+        if (!/\.(jsonl|ndjson)$/i.test(file.name)) continue;
+        for (const [lineNo, line] of text.split(/\r?\n/).entries()) {
+          if (!line.trim()) continue;
+          try { state.records.push({...JSON.parse(line), _line: lineNo + 1}); }
+          catch { state.records.push({_invalid: true, _line: lineNo + 1, body: `JSON parse failed at line ${lineNo + 1}`}); }
+        }
+      }
+      for (const record of state.records) {
+        record._hashOk = !record._invalid && await digestRevision(record) === record.revision_id;
+        record._fieldOk = !record._invalid && ['document_id','revision_id','source_url','title','published_at_raw','body'].every(k => typeof record[k] === 'string' && record[k].length > 0);
+      }
+      search.disabled = false; render();
+    }
+
+    function renderStats(records) {
+      const invalid = records.filter(r => r._invalid || !r._fieldOk).length;
+      const hashBad = records.filter(r => !r._hashOk).length;
+      const chars = records.reduce((sum, r) => sum + (r.body?.length ?? 0), 0);
+      const parts = [
+        ['문서', records.length, ''], ['본문 글자', chars.toLocaleString(), ''],
+        ['필드', invalid ? `${invalid} 오류` : '정상', invalid ? 'bad' : 'ok'],
+        ['revision', hashBad ? `${hashBad} 불일치` : '전부 일치', hashBad ? 'bad' : 'ok']
+      ];
+      if (state.report) parts.push(['실행', `${state.report.documents ?? '?'}개`, '']);
+      $('#stats').replaceChildren(...parts.map(([label, value, cls]) => { const el = document.createElement('div'); el.className = `stat ${cls}`; el.textContent = `${label}: ${value}`; return el; }));
+    }
+
+    function render() {
+      const query = search.value.trim().toLowerCase();
+      const records = state.records.filter(r => !query || [r.title, r.body, r.document_id, r.source_url].some(v => esc(v).toLowerCase().includes(query)))
+        .sort((a, b) => orderScore(a) - orderScore(b));
+      renderStats(state.records);
+      const rows = $('#rows'); rows.replaceChildren();
+      if (!records.length) { rows.textContent = state.records.length ? '검색 결과가 없습니다.' : '자료가 없습니다.'; return; }
+      for (const record of records) {
+        const button = document.createElement('button'); button.type = 'button'; button.className = `row ${state.selected === record ? 'selected' : ''}`;
+        const title = document.createElement('div'); title.className = 'row-title'; title.textContent = record._invalid ? `잘못된 JSON (line ${record._line})` : record.title;
+        const meta = document.createElement('div'); meta.className = 'row-meta'; meta.textContent = `${record.published_at_raw ?? ''} · ${record.body?.length ?? 0}자 · ${record.document_id ?? ''}`;
+        button.append(title, meta);
+        if (record.warnings?.length) { const tags = document.createElement('div'); for (const warning of record.warnings) { const tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = warning; tags.append(tag); } button.append(tags); }
+        button.onclick = () => { state.selected = record; render(); renderDetail(record); }; rows.append(button);
+      }
+      if (state.selected && !records.includes(state.selected)) { state.selected = null; $('#detail').innerHTML = '<h2>문서를 선택하세요</h2>'; }
+    }
+
+    function dateScore(value) {
+      const match = String(value ?? '').match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})(?:\D+(\d{1,2})\D+(\d{1,2}))?/);
+      if (!match) return 0;
+      return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4] ?? 0), Number(match[5] ?? 0)).getTime();
+    }
+    function orderScore(record) {
+      const receipt = state.report?.receipts?.find(item => item.document_id === record.document_id);
+      return receipt?.index ?? (1000000000000000 - dateScore(record.published_at_raw));
+    }
+
+    function renderDetail(record) {
+      const detail = $('#detail'); detail.replaceChildren();
+      const head = document.createElement('div'); head.className = 'detail-head';
+      const title = document.createElement('h2'); title.textContent = record.title ?? '잘못된 JSON'; head.append(title);
+      const badge = document.createElement('span'); badge.className = `detail-badge ${record._hashOk && record._fieldOk ? '' : 'bad'}`; badge.textContent = record._hashOk && record._fieldOk ? '검증 정상' : '검증 오류'; head.append(badge); detail.append(head);
+      const dl = document.createElement('dl');
+      const publishedRange = record.published_at ? record.published_at : record.published_at_lower_bound && record.published_at_upper_bound ? `${record.published_at_lower_bound} ~ ${record.published_at_upper_bound} (범위)` : '확인 불가';
+      const fields = [['문서 ID', record.document_id], ['revision', record.revision_id], ['이전 revision', record.supersedes_revision_id || '없음'], ['원문 주소', record.source_url], ['관측 주소', record.observed_url], ['게시일 원문', record.published_at_raw], ['게시일 해석', publishedRange], ['수집 시각', record.captured_at], ['저장 상태', record.rights_review_status], ['RAG 대상', String(record.rag_eligible)], ['검증', record._hashOk && record._fieldOk ? '정상' : '오류']];
+      for (const [label, value] of fields) { const dt = document.createElement('dt'); dt.textContent = label; const dd = document.createElement('dd'); dd.textContent = esc(value); dl.append(dt, dd); } detail.append(dl);
+      if (record.warnings?.length) { const p = document.createElement('p'); p.textContent = `경고: ${record.warnings.join(', ')}`; detail.append(p); }
+      const bodyTitle = document.createElement('h3'); bodyTitle.textContent = '본문'; detail.append(bodyTitle);
+      const body = document.createElement('pre'); body.id = 'body'; body.textContent = record.body ?? ''; detail.append(body);
+    }
+
+    fileInput.onchange = () => parseFiles([...fileInput.files]);
+    search.oninput = render;
+    $('#clear').onclick = () => { fileInput.value = ''; search.value = ''; search.disabled = true; state.records = []; state.report = null; state.selected = null; render(); $('#detail').innerHTML = '<h2>문서를 선택하세요</h2>'; $('#message').textContent = 'posts.jsonl을 선택하세요. report.json도 함께 선택하면 실행 검증 결과를 표시합니다.'; };
+    fileInput.addEventListener('change', () => { if (fileInput.files.length) $('#message').textContent = `${fileInput.files.length}개 파일을 읽었습니다.`; });
+  </script>
+</body>
+</html>
