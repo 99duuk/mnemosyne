@@ -1,0 +1,64 @@
+<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mnemosyne · 수집 범위</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f5f6f8;color:#20282c;font:16px/1.6 system-ui,sans-serif}main{max-width:1050px;margin:36px auto;padding:0 24px}h1{margin-bottom:4px}p{color:#58636b}.card{background:white;border:1px solid #dde3e6;border-radius:14px;padding:22px;margin:18px 0}.toolbar{display:flex;gap:18px;flex-wrap:wrap;align-items:center}button,select,input[type=search]{font:inherit;padding:10px 14px;border:1px solid #ccd4d9;border-radius:8px;background:white}button{cursor:pointer;background:#185e50;color:white;border:0}.row{display:flex;align-items:center;padding:9px 12px;gap:12px;border-bottom:1px solid #edf0f2}.row.child{padding-left:38px}.row.off{color:#8b949a;background:#f7f8fa}.row span{flex:1}.row small{color:#687880}input[type=checkbox]{width:18px;height:18px}#summary{font-weight:700;color:#185e50}code{word-break:break-all}#rows{max-height:58vh;overflow:auto}#command{white-space:pre-wrap;background:#f4f6f8;padding:14px;border-radius:8px}#progress{white-space:pre-wrap}a{color:#185e50}
+</style>
+<main><h1>어떤 글을 모을까요?</h1><p id="blog"></p>
+<div class="card"><div class="toolbar"><select id="mode" aria-label="수집 방식"><option value="all">전체 카테고리</option><option value="exclude">선택한 카테고리 제외</option><option value="include">선택한 카테고리만 포함</option></select><input id="search" type="search" placeholder="카테고리 검색" aria-label="카테고리 검색"><label>방문 간격 <input id="pace" type="number" min="3" max="60" value="5" style="width:70px">초</label><label>한 번에 <input id="batch" type="number" min="1" value="50" style="width:70px">개</label><button id="download">수집 설정 저장</button></div>
+<p>상위 카테고리를 선택하면 하위 카테고리도 함께 적용합니다. 체크는 현재 선택한 포함·제외 방식에 적용됩니다.</p><div id="summary"></div></div>
+<div class="card" id="estimate"><strong>수집 예상</strong><p><label>한 번 실행할 목록 페이지 <input id="pageBudget" type="number" min="1" value="10" style="width:70px">페이지</label></p><div id="estimateText"></div></div><div class="card" id="rows"></div><div class="card"><strong>현재 조건에 해당하는 글 목록</strong><p id="selectionStatus"></p><button id="listDownload">글 목록 저장</button><div id="posts"></div></div><div class="card"><strong>저장된 글 목록 진행 상황</strong><p id="progress"></p><p>이 화면은 생성 시점의 스냅샷입니다. 설정 저장은 카테고리 JSON 다운로드이며, 방문 간격·배치 크기는 아래 실행 명령에 반영됩니다. 네이버 접속이나 본문 수집을 시작하지 않습니다.</p><code id="command"></code><p>본문은 같은 데이터 폴더의 <code>posts.jsonl</code>을 기존 뷰어에서 열면 됩니다.</p></div>
+<script id="data" type="application/json">__MNEMOSYNE_DATA__</script>
+<script>
+const data=JSON.parse(document.querySelector('#data').textContent), selected=new Set();
+const $=s=>document.querySelector(s);$('#blog').textContent=`${data.blog} · ${data.categories.find(c=>c.id==='0')?.count??'?'}개 공개 글 표시 · ${data.created_at}`;
+const plan=data.plan;if(plan.exclude.length&&plan.include.length===1&&plan.include[0]==='0'){$('#mode').value='exclude';plan.exclude.forEach(id=>selected.add(id));}else if(!plan.exclude.length&&!plan.include.includes('0')){$('#mode').value='include';plan.include.forEach(id=>selected.add(id));}else if(plan.exclude.length){const option=new Option('저장된 복합 설정','custom');$('#mode').add(option);$('#mode').value='custom';}
+let currentList=[];
+function config(){const mode=$('#mode').value;if(mode==='custom')return data.plan;const roots=[...selected].filter(id=>![...selected].some(parent=>parent!==id&&descendants(parent).has(id)));return {schema:'mnemosyne.collection-plan/v1',blog:data.blog,include:mode==='include'?roots:['0'],exclude:mode==='exclude'?roots:[]};}
+function download(value,name,type){const a=document.createElement('a'),url=URL.createObjectURL(new Blob([value],{type}));a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function renderPosts(){const plan=config(),missing=[...plan.include.filter(id=>!data.snapshots[id]),...plan.exclude.filter(id=>data.snapshots[id]?.status!=='complete')];$('#posts').replaceChildren();$('#listDownload').disabled=Boolean(missing.length);if(missing.length){currentList=[];$('#selectionStatus').textContent=`선택한 카테고리 목록을 추가로 조사해야 합니다: ${[...new Set(missing)].map(id=>data.categories.find(c=>c.id===id)?.name??id).join(', ')}. 설정을 저장하고 아래 discover 명령을 실행하세요.`;return;}
+const excluded=new Set(plan.exclude.flatMap(id=>data.snapshots[id].documents.map(d=>d.document_id)));currentList=[...new Map(plan.include.flatMap(id=>data.snapshots[id]?.documents??[]).filter(d=>!excluded.has(d.document_id)).map(d=>[d.document_id,d])).values()];const complete=plan.include.every(id=>data.snapshots[id]?.status==='complete');$('#selectionStatus').textContent=`${currentList.length}개 글 · ${complete?'선택 범위 목록 확인 완료':'일부 페이지까지 확인됨'} · 아래는 앞 30개 미리보기`;
+$('#posts').replaceChildren(...currentList.slice(0,30).map(d=>{const row=document.createElement('div');row.className='row';const title=document.createElement('span');title.textContent=d.title;const status=document.createElement('small');status.textContent=`${d.published_at_raw} · ${{stored:'보관됨',pending:'수집 대기',review:'확인 필요'}[data.states[d.document_id]]??'수집 대기'}`;row.append(title,status);return row;}));}
+function fmt(minutes){if(minutes===null||!Number.isFinite(minutes))return '미확인';const total=Math.ceil(minutes);return total<60?`${total}분`:`${Math.floor(total/60)}시간${total%60?` ${total%60}분`:''}`;}
+function renderEstimate(){
+  const p=config(), inputs=[$('#pace'),$('#batch'),$('#pageBudget')];
+  if(inputs.some(el=>!el.value||!el.checkValidity()||!Number.isSafeInteger(Number(el.value)))){
+    $('#estimateText').textContent='방문 간격은 3~60초, 배치 수와 페이지 수는 1 이상의 정수를 입력하세요.';$('#command').textContent='입력값을 수정하면 실행 명령이 표시됩니다.';return;
+  }
+  const pace=Number(inputs[0].value),batch=Number(inputs[1].value),pageBudget=Number(inputs[2].value);
+  const roots=ids=>ids.filter(id=>!ids.some(other=>other!==id&&descendants(other).has(id)));
+  const ex=roots(p.exclude),inc=roots(p.include).filter(id=>!ex.some(other=>descendants(other).has(id)));
+  const count=id=>data.categories.find(c=>c.id===id)?.count;
+  const subtract=ex.filter(id=>inc.some(other=>descendants(other).has(id)));
+  const known=[...inc,...subtract].every(id=>Number.isFinite(count(id)));
+  const expected=known?Math.max(0,inc.reduce((n,id)=>n+count(id),0)-subtract.reduce((n,id)=>n+count(id),0)):null;
+  // The driver scans exclusion lists as well; filtering does not shorten the include-list scan.
+  const scans=[...new Set([...p.exclude,...p.include])];
+  const pageCounts=scans.map(id=>{
+    const s=data.snapshots[id];if(s?.status==='complete')return 0;
+    return Number.isFinite(count(id))?Math.max(0,Math.ceil(count(id)/30)-(s?.last_page??0)):null;
+  });
+  const pages=pageCounts.every(n=>n!==null)?pageCounts.reduce((a,b)=>a+b,0):null;
+  const stored=currentList.filter(d=>data.states[d.document_id]==='stored').length;
+  const remaining=expected===null?null:Math.max(0,expected-stored);
+  const range=n=>n===null?'목록 확인 후 계산':`${fmt(n*pace/60)} ~ ${fmt(n*(pace+3)/60)}`;
+  const rows=[
+    `선택 범위: ${expected===null?'글 수 미확인':expected.toLocaleString()+'개 글'} · 확인된 기보관 ${stored}개`,
+    `목록 조사: 페이지당 최대 30개 · 남은 새 페이지 ${pages===null?'미확인':pages+'페이지'}${pages===null?'':` · ${pageBudget}페이지씩 ${Math.ceil(pages/pageBudget)}회 실행`}`,
+    `목록 예상 시간: ${range(pages)} · 제외 목록 조사도 포함`,
+    `본문 수집: 한 글씩 저장 · ${batch}개씩 ${remaining===null?'횟수 미확인':Math.ceil(remaining/batch)+'회 실행'} · 남은 글 ${remaining===null?'미확인':remaining.toLocaleString()+'개'}`,
+    `본문 예상 시간: ${range(remaining)} · 이번 ${batch}개 배치: ${range(remaining===null?batch:Math.min(batch,remaining))}`,
+    `청크 분할 없이 글 전체를 보관합니다. 총 수집 상한 없이 다음 실행에서 이어갑니다.`,
+    `실측 예측이 아닌 계획 범위입니다: 방문당 ${pace}초 기준 ~ 3초 여유 추가. 시작·목록 재개·로딩 지연·오류·수동 재실행 대기 시간은 별도이며, 실제 시간은 범위를 넘을 수 있습니다. 목록 조사 중에는 기보관 글이 추가로 확인되어 남은 본문 수가 줄 수 있습니다.`
+  ];
+  $('#estimateText').replaceChildren(...rows.map(text=>{const el=document.createElement('p');el.textContent=text;return el;}));
+  $('#command').textContent=data.command.replace('--max-pages all',`--max-pages ${pageBudget} --interval ${pace*1000}`).replace('--limit 50',`--limit ${batch} --interval ${pace*1000}`);
+}
+function descendants(id){const found=new Set([id]);let changed=true;while(changed){changed=false;for(const c of data.categories)if(found.has(c.parent_id)&&!found.has(c.id)){found.add(c.id);changed=true;}}return found;}
+function render(){const mode=$('#mode').value,query=$('#search').value.toLowerCase(),plan=config(),included=new Set(plan.include.flatMap(id=>[...descendants(id)])),excluded=new Set(plan.exclude.flatMap(id=>[...descendants(id)]));const list=data.categories.filter(c=>c.id!=='0');
+const active=list.filter(c=>included.has(c.id)&&!excluded.has(c.id));$('#summary').textContent=`${active.length} / ${list.length}개 카테고리 포함${mode==='all'?' · 기본 설정':''}`;
+$('#rows').replaceChildren(...list.filter(c=>c.name.toLowerCase().includes(query)).map(c=>{const row=document.createElement('label');row.className=`row ${c.parent_id!=='0'?'child':''} ${active.includes(c)?'':'off'}`;const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=selected.has(c.id);checkbox.disabled=mode==='all'||mode==='custom';checkbox.onchange=()=>{checkbox.checked?selected.add(c.id):selected.delete(c.id);render();};const name=document.createElement('span');name.textContent=c.name;const count=document.createElement('small');count.textContent=`${c.count??'?'}개 · ID ${c.id}`;row.append(checkbox,name,count);return row;}));renderPosts();renderEstimate();}
+$('#mode').onchange=()=>{selected.clear();render();};$('#search').oninput=render;$('#pace').oninput=renderEstimate;$('#batch').oninput=renderEstimate;$('#pageBudget').oninput=renderEstimate;
+$('#progress').textContent=data.progress.length?data.progress.map(p=>`${p.name}: ${p.collected}/${p.expected??'?'}개 목록 · ${p.status}`).join('\n'):'아직 글 목록을 순회하지 않았습니다. 카테고리 선택 후 목록을 만들 수 있습니다.';
+$('#download').onclick=()=>download(JSON.stringify(config(),null,2),`${data.blog}-plan.json`,'application/json');
+$('#listDownload').onclick=()=>download(currentList.map(d=>JSON.stringify({...d,status:data.states[d.document_id]})).join('\n'),`${data.blog}-selection.jsonl`,'application/x-ndjson');render();renderEstimate();
+</script></main></html>
