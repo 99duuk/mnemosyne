@@ -1,0 +1,13 @@
+{
+  "name": "mnemosyne-chrome-capture-test",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "test:browser": "node test/browser.mjs",
+    "collect": "node collector/cli.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}
