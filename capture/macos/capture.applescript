@@ -8,14 +8,13 @@ end bridgeError
 
 on safariTab(expectedURL)
 	local selectedTab, currentURL
-	if application "Safari" is not running then return my bridgeError("NO_SAFARI_TAB")
+	if application "Google Chrome" is not running then return my bridgeError("NO_SAFARI_TAB")
 	try
-		tell application "Safari"
-			if frontmost is false then return my bridgeError("SAFARI_NOT_FRONTMOST")
+		tell application "Google Chrome"
 			if (count of windows) is 0 then return my bridgeError("NO_SAFARI_TAB")
-			set selectedTab to «class cTab» of front window
+			set selectedTab to active tab of front window
 			if selectedTab is missing value then return my bridgeError("NO_SAFARI_TAB")
-			set currentURL to «class pURL» of selectedTab
+			set currentURL to URL of selectedTab
 		end tell
 	on error errorText number errorNumber
 		if errorNumber is -1743 then return my bridgeError("APPLE_EVENTS_DENIED")
@@ -52,13 +51,13 @@ on run arguments
 	set beforeURL to item 2 of tabResult
 	try
 		if bridgeMode is "smoke" then
-			tell application "Safari"
-				set pageResult to «event sfridojs» "'MNEMOSYNE_JS_OK'" given «class dcnm»:selectedTab
+			tell application "Google Chrome"
+				set pageResult to execute selectedTab javascript "'MNEMOSYNE_JS_OK'"
 			end tell
 		else
 			set extractorSource to «event rdwrread» («class psxf» (item 3 of arguments)) given «class as  »:«class utf8»
-			tell application "Safari"
-				set pageResult to «event sfridojs» extractorSource given «class dcnm»:selectedTab
+			tell application "Google Chrome"
+				set pageResult to execute selectedTab javascript extractorSource
 			end tell
 		end if
 	on error errorText number errorNumber

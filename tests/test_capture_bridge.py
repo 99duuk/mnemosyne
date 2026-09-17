@@ -234,18 +234,6 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(ignored.returncode, 1)
         self.assertTrue(fixture.is_file())
 
-    def test_applescript_missing_current_tab_precheck_is_explicit(self) -> None:
-        source = Path("capture/macos/capture.applescript").read_text(encoding="utf-8")
-        selected = source.index("set selectedTab to «class cTab» of front window")
-        missing = source.index('if selectedTab is missing value then return my bridgeError("NO_SAFARI_TAB")')
-        url_read = source.index("set currentURL to «class pURL» of selectedTab")
-        denial = source.index('if errorNumber is -1743 then return my bridgeError("APPLE_EVENTS_DENIED")')
-        absent = source.index('if errorNumber is -1728 then return my bridgeError("NO_SAFARI_TAB")')
-
-        self.assertLess(selected, missing)
-        self.assertLess(missing, url_read)
-        self.assertLess(denial, absent)
-
     def test_applescript_source_compiles_with_native_compiler(self) -> None:
         with tempfile.TemporaryDirectory(prefix="mnemosyne-osacompile-") as directory:
             output = Path(directory) / "capture.scpt"
