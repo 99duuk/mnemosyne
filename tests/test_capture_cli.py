@@ -178,8 +178,8 @@ class CaptureCliTests(unittest.TestCase):
         cases = {
             BridgeErrorCode.NO_SAFARI_TAB: (CommandCode.NO_SAFARI_TAB, "NO_SAFARI_TAB — run doctor"),
             BridgeErrorCode.SAFARI_NOT_FRONTMOST: (CommandCode.SAFARI_NOT_FRONTMOST, "SAFARI_NOT_FRONTMOST — run doctor"),
-            BridgeErrorCode.APPLE_EVENTS_DENIED: (CommandCode.APPLE_EVENTS_DENIED, "APPLE_EVENTS_DENIED — enable Safari JavaScript/Automation"),
-            BridgeErrorCode.JAVASCRIPT_UNAVAILABLE: (CommandCode.JAVASCRIPT_DISABLED, "JAVASCRIPT_DISABLED — enable Safari JavaScript/Automation"),
+            BridgeErrorCode.APPLE_EVENTS_DENIED: (CommandCode.APPLE_EVENTS_DENIED, "APPLE_EVENTS_DENIED — enable Chrome JavaScript/Automation"),
+            BridgeErrorCode.JAVASCRIPT_UNAVAILABLE: (CommandCode.JAVASCRIPT_DISABLED, "JAVASCRIPT_DISABLED — enable Chrome JavaScript/Automation"),
             BridgeErrorCode.TAB_CHANGED: (CommandCode.TAB_CHANGED, "TAB_CHANGED — run doctor"),
             BridgeErrorCode.UNSUPPORTED_PAGE: (CommandCode.UNSUPPORTED_PAGE, "UNSUPPORTED_PAGE — run doctor"),
             BridgeErrorCode.BRIDGE_TIMEOUT: (CommandCode.BRIDGE_TIMEOUT, "BRIDGE_TIMEOUT — run doctor"),

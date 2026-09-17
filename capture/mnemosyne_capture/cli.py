@@ -153,7 +153,7 @@ def _notify(bridge: Bridge, result: StoreResult) -> StoreResult:
         case CommandCode.CAPTURED_EXPORT_STALE:
             body = f"{result.code.value} — export required"
         case CommandCode.APPLE_EVENTS_DENIED | CommandCode.JAVASCRIPT_DISABLED:
-            body = f"{result.code.value} — enable Safari JavaScript/Automation"
+            body = f"{result.code.value} — enable Chrome JavaScript/Automation"
         case (CommandCode.NO_SAFARI_TAB | CommandCode.SAFARI_NOT_FRONTMOST | CommandCode.BRIDGE_TIMEOUT
               | CommandCode.SCRIPT_EXECUTION_BLOCKED | CommandCode.UNSUPPORTED_HOST | CommandCode.UNSUPPORTED_PAGE
               | CommandCode.TAB_CHANGED | CommandCode.INVALID_PAYLOAD | CommandCode.CORRUPT_CANONICAL | CommandCode.WRITE_FAILED):
