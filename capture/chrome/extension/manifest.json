@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Mnemosyne — local capture",
+  "version": "0.1.0",
+  "description": "Captures public posts in an explicitly selected tab. Disabled until armed; the local collector archives each receipt.",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": ["https://blog.naver.com/*"],
+  "background": {"service_worker": "worker.js", "type": "module"},
+  "action": {"default_popup": "popup.html"},
+  "content_scripts": [{
+    "matches": ["https://blog.naver.com/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle",
+    "all_frames": true
+  }]
+}
