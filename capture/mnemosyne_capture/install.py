@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import os
 import stat
@@ -21,12 +22,12 @@ from .install_artifacts import (
     read_private,
     sync,
     validate_manifest_release,
-    validate_legacy_workflow,
     validate_legacy_workflow_hashes,
     validate_release,
     validate_workflow,
     validate_workflow_hashes,
     valid_prefix,
+    write_private,
 )
 from .install_paths import InstallPaths, InvalidPathError, bind_paths, private_directory, revalidate_paths, sys_version
 from .store import CaptureStore, StoreLockError, StoreResult
@@ -126,17 +127,17 @@ def _install_locked(paths: InstallPaths, built: BuiltRelease, *, coordination_ch
             sync(paths.services)
             _require_paths(paths, True)
             return StoreResult(CommandName.INSTALL, CommandCode.INSTALLED, True, True, path=str(paths.workflow))
-        layout_changed = _repair_legacy_workflow_layout(paths, built)
+        stable = _stable_release(paths, allow_legacy_workflow=True)
+        if stable is None:
+            raise RuntimeTamperedError
+        layout_changed = _repair_legacy_workflow_layout(paths, stable[1]["workflow"])
         return StoreResult(CommandName.INSTALL, CommandCode.INSTALLED, True, had_release_stage or layout_changed,
                            path=str(paths.workflow))
     if witness.is_symlink() and os.readlink(witness) == target and final_release.exists():
         cleanup_published_release(runtime, releases, final_release, built, lambda: _require_paths(paths, False))
         _require_paths(paths, False)
         if paths.workflow.exists():
-            validate_workflow(paths.workflow, built)
-            os.replace(witness, current)
-            sync(runtime)
-            _require_paths(paths, True)
+            _finish_workflow_update(paths, built, target)
             return StoreResult(CommandName.INSTALL, CommandCode.INSTALLED, True, True, path=str(paths.workflow))
         if paths.workflow_stage.exists():
             publish_workflow_stage(paths.workflow_stage, built, lambda: _require_paths(paths, True))
@@ -150,21 +151,20 @@ def _install_locked(paths: InstallPaths, built: BuiltRelease, *, coordination_ch
         _require_paths(paths, True)
         return StoreResult(CommandName.INSTALL, CommandCode.INSTALLED, True, True, path=str(paths.workflow))
     if current.is_symlink() and paths.workflow.exists() and not witness.exists():
-        _stable_release(paths, allow_legacy_workflow=True)
-        layout_changed = _repair_legacy_workflow_layout(paths, built)
+        stable = _stable_release(paths, allow_legacy_workflow=True)
+        if stable is None:
+            raise RuntimeTamperedError
+        layout_changed = _repair_legacy_workflow_layout(paths, stable[1]["workflow"])
         try:
             if final_release.exists():
                 cleanup_published_release(runtime, releases, final_release, built,
                                           lambda: _require_paths(paths, layout_changed))
             else:
                 publish_release(runtime, releases, final_release, built, lambda: _require_paths(paths, True))
-            validate_workflow(paths.workflow, built)
             witness.symlink_to(target)
             sync(runtime)
             _require_paths(paths, True)
-            os.replace(witness, current)
-            sync(runtime)
-            _require_paths(paths, True)
+            _finish_workflow_update(paths, built, target)
         except (ArtifactTamperedError, OSError) as error:
             if layout_changed:
                 raise InstallMutationError from error
@@ -205,12 +205,12 @@ def _require_paths(paths: InstallPaths, changed: bool) -> None:
         raise PathDriftError(changed) from error
 
 
-def _repair_legacy_workflow_layout(paths: InstallPaths, built: BuiltRelease) -> bool:
+def _repair_legacy_workflow_layout(paths: InstallPaths, workflow: dict) -> bool:
     try:
-        validate_workflow(paths.workflow, built)
+        validate_workflow_hashes(paths.workflow, workflow)
         return False
     except ArtifactTamperedError:
-        validate_legacy_workflow(paths.workflow, built)
+        validate_legacy_workflow_hashes(paths.workflow, workflow)
     _require_paths(paths, False)
     source = paths.workflow / "Contents/document.wflow"
     target = paths.workflow / "Contents/Resources/document.wflow"
@@ -219,13 +219,42 @@ def _repair_legacy_workflow_layout(paths: InstallPaths, built: BuiltRelease) -> 
         sync(target.parent)
         sync(source.parent)
         _require_paths(paths, True)
-        validate_workflow(paths.workflow, built)
+        validate_workflow_hashes(paths.workflow, workflow)
     except (ArtifactTamperedError, OSError) as error:
         raise InstallMutationError from error
     return True
 
 
-def _stable_release(paths: InstallPaths, *, allow_legacy_workflow: bool = False) -> tuple[Path, dict] | None:
+def _finish_workflow_update(paths: InstallPaths, built: BuiltRelease, target: str) -> None:
+    runtime = paths.data_root / "runtime"
+    current = runtime / "current"
+    witness = runtime / ".current.installing"
+    if current.is_symlink():
+        if os.readlink(current) != target:
+            _stable_release(paths, allow_legacy_workflow=True, pending_document=built)
+        else:
+            validate_workflow(paths.workflow, built)
+    elif current.exists() and not current.is_symlink():
+        raise RuntimeTamperedError
+    document = paths.workflow / "Contents/Resources/document.wflow"
+    writing = document.with_name(f"{document.name}.writing")
+    if read_private(document) != built.document:
+        if writing.exists() and not valid_prefix(built.document, read_private(writing)):
+            raise ArtifactTamperedError
+        if not writing.exists():
+            write_private(writing, built.document)
+        os.replace(writing, document)
+        sync(document.parent)
+    elif writing.exists():
+        raise ArtifactTamperedError
+    validate_workflow(paths.workflow, built)
+    os.replace(witness, current)
+    sync(runtime)
+    _require_paths(paths, True)
+
+
+def _stable_release(paths: InstallPaths, *, allow_legacy_workflow: bool = False,
+                    pending_document: BuiltRelease | None = None) -> tuple[Path, dict] | None:
     current = paths.data_root / "runtime/current"
     if not current.is_symlink():
         _reject_clean_reserved(paths)
@@ -237,7 +266,10 @@ def _stable_release(paths: InstallPaths, *, allow_legacy_workflow: bool = False)
     if not stat.S_ISDIR(release.stat(follow_symlinks=False).st_mode):
         raise RuntimeTamperedError
     raw = read_private(release / "manifest.json")
-    manifest = json.loads(raw)
+    try:
+        manifest = json.loads(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise RuntimeTamperedError from error
     if not isinstance(manifest, dict) or raw != canonical(manifest):
         raise RuntimeTamperedError
     workflow = manifest.get("workflow")
@@ -247,10 +279,40 @@ def _stable_release(paths: InstallPaths, *, allow_legacy_workflow: bool = False)
     try:
         validate_workflow_hashes(paths.workflow, workflow)
     except ArtifactTamperedError:
-        if not allow_legacy_workflow:
+        if pending_document is not None:
+            _validate_pending_workflow_document(paths, workflow, pending_document)
+        elif not allow_legacy_workflow:
             raise
-        validate_legacy_workflow_hashes(paths.workflow, workflow)
+        else:
+            validate_legacy_workflow_hashes(paths.workflow, workflow)
     return release, manifest
+
+
+def _validate_pending_workflow_document(paths: InstallPaths, workflow: dict, built: BuiltRelease) -> None:
+    resources = paths.workflow / "Contents/Resources"
+    document = resources / "document.wflow"
+    writing = resources / "document.wflow.writing"
+    old_document = read_private(document)
+    if old_document == built.document:
+        if writing.exists():
+            raise ArtifactTamperedError
+        resource_entries = {"document.wflow", "mnemosyne-owner.json"}
+    elif (hashlib.sha256(old_document).hexdigest() == workflow.get("document_sha256")
+          and writing.exists() and valid_prefix(built.document, read_private(writing))):
+        resource_entries = {"document.wflow", "document.wflow.writing", "mnemosyne-owner.json"}
+    else:
+        raise ArtifactTamperedError
+    for directory, entries in ((paths.workflow, {"Contents"}),
+                               (paths.workflow / "Contents", {"Info.plist", "Resources"}),
+                               (resources, resource_entries)):
+        status = directory.stat(follow_symlinks=False)
+        if (not stat.S_ISDIR(status.st_mode) or status.st_uid != os.getuid()
+                or stat.S_IMODE(status.st_mode) != 0o700 or set(os.listdir(directory)) != entries):
+            raise ArtifactTamperedError
+    for relative, field in (("Contents/Info.plist", "info_plist_sha256"),
+                            ("Contents/Resources/mnemosyne-owner.json", "owner_marker_sha256")):
+        if hashlib.sha256(read_private(paths.workflow / relative)).hexdigest() != workflow.get(field):
+            raise ArtifactTamperedError
 
 
 def _reject_clean_reserved(paths: InstallPaths) -> None:

@@ -21,7 +21,8 @@ from mnemosyne_capture.cli import main
 from mnemosyne_capture.payload import CapturePayload
 from mnemosyne_capture.store import CaptureStore
 from mnemosyne_capture.install_artifacts import (ArtifactTamperedError, OWNER, build_release,
-                                                  canonical, publish_release, publish_workflow_stage, valid_prefix, _resume_file)
+                                                  canonical, publish_release, publish_workflow_stage, valid_prefix,
+                                                  workflow_plist, _resume_file)
 from mnemosyne_capture.doctor import _python_check
 from mnemosyne_capture import doctor as doctor_module
 from mnemosyne_capture.install import PathDriftError, _require_paths
@@ -106,6 +107,191 @@ class CaptureInstallTests(unittest.TestCase):
                          workflow / "Contents/Resources/mnemosyne-owner.json"):
                 self.assertEqual((stat.S_IMODE(path.stat().st_mode), path.stat().st_nlink), (0o600, 1))
 
+    def test_install_refreshes_trusted_workflow_when_python_binding_changes(self) -> None:
+        # Given: a trusted install built with an earlier interpreter realpath.
+        with tempfile.TemporaryDirectory(prefix="mnemosyne-install-") as directory:
+            base = Path(directory)
+            home = private_home(base)
+            data_root = base / "data"
+            old_python = "/private/tmp/mnemosyne-python-3.14.6"
+            new_python = "/private/tmp/mnemosyne-python-3.14.7"
+            with patch("mnemosyne_capture.install_artifacts.sys_executable", return_value=old_python):
+                installed = invoke(["--home", str(home), "--data-root", str(data_root), "install"])
+
+            # When: a rebuilt release binds the same trusted installation to a new interpreter realpath.
+            with patch("mnemosyne_capture.install_artifacts.sys_executable", return_value=new_python):
+                refreshed = invoke(["--home", str(home), "--data-root", str(data_root), "install"])
+
+            # Then: install succeeds and both manifest and workflow command use the new binding.
+            release = (data_root / "runtime/current").resolve()
+            manifest = json.loads((release / "manifest.json").read_bytes())
+            document = plistlib.loads((home / "Library/Services/Mnemosyne Capture.workflow/Contents/Resources/document.wflow").read_bytes())
+            command = document["actions"][0]["action"]["ActionParameters"]["COMMAND_STRING"]
+            self.assertEqual((installed[0], installed[1]["code"]), (0, "INSTALLED"))
+            self.assertEqual((refreshed[0], refreshed[1]["code"]), (0, "INSTALLED"))
+            self.assertEqual(manifest["python_realpath"], new_python)
+            self.assertIn(f"'{new_python}'", command)
+
+    def test_install_refuses_tampered_old_document_when_binding_refresh_resumes(self) -> None:
+        # Given: a trusted old binding whose refresh stops immediately before the document replacement.
+        with tempfile.TemporaryDirectory(prefix="mnemosyne-install-") as directory:
+            base = Path(directory)
+            home = private_home(base)
+            data_root = base / "data"
+            old_python = "/private/tmp/mnemosyne-python-3.14.6"
+            new_python = "/private/tmp/mnemosyne-python-3.14.7"
+            with patch("mnemosyne_capture.install_artifacts.sys_executable", return_value=old_python):
+                invoke(["--home", str(home), "--data-root", str(data_root), "install"])
+            original_replace = os.replace
+
+            def interrupt_document_replace(source: Path, target: Path) -> None:
+                if source.name == "document.wflow.writing" and target.name == "document.wflow":
+                    raise OSError
+                original_replace(source, target)
+
+            with patch("mnemosyne_capture.install_artifacts.sys_executable", return_value=new_python), \
+                 patch("mnemosyne_capture.install.os.replace", new=interrupt_document_replace):
+                interrupted = invoke(["--home", str(home), "--data-root", str(data_root), "install"])
+            document = home / "Library/Services/Mnemosyne Capture.workflow/Contents/Resources/document.wflow"
+            document.write_bytes(b"tampered-old-document")
+
+            # When: the interrupted refresh resumes after an attacker changes the old document.
+            with patch("mnemosyne_capture.install_artifacts.sys_executable", return_value=new_python):
+                refused = invoke(["--home", str(home), "--data-root", str(data_root), "install"])
+
+            # Then: the trusted old identity is required and the tampered document is not overwritten.
+            self.assertEqual((interrupted[0], interrupted[1]["code"]), (1, "WRITE_FAILED"))
+            self.assertEqual((refused[0], refused[1]["code"], refused[1]["changed"]),
+                             (1, "RUNTIME_TAMPERED", False))
+            self.assertEqual(document.read_bytes(), b"tampered-old-document")
+
+    def test_install_resumes_interrupted_binding_refresh(self) -> None:
+        # Given: a trusted old binding whose refresh stops immediately before the document replacement.
+        with tempfile.TemporaryDirectory(prefix="mnemosyne-install-") as directory:
+            base = Path(directory)
+            home = private_home(base)
+            data_root = base / "data"
+            old_python = "/private/tmp/mnemosyne-python-3.14.6"
+            new_python = "/private/tmp/mnemosyne-python-3.14.7"
+            with patch("mnemosyne_capture.install_artifacts.sys_executable", return_value=old_python):
+                invoke(["--home", str(home), "--data-root", str(data_root), "install"])
+            original_replace = os.replace
+
+            def interrupt_document_replace(source: Path, target: Path) -> None:
+                if source.name == "document.wflow.writing" and target.name == "document.wflow":
+                    raise OSError
+                original_replace(source, target)
+
+            with patch("mnemosyne_capture.install_artifacts.sys_executable", return_value=new_python), \
+                 patch("mnemosyne_capture.install.os.replace", new=interrupt_document_replace):
+                interrupted = invoke(["--home", str(home), "--data-root", str(data_root), "install"])
+
+            # When: the trusted interrupted refresh resumes unchanged.
+            with patch("mnemosyne_capture.install_artifacts.sys_executable", return_value=new_python):
+                resumed = invoke(["--home", str(home), "--data-root", str(data_root), "install"])
+
+            # Then: it completes the new binding rather than leaving a witness or stale workflow.
+            manifest = json.loads(((data_root / "runtime/current").resolve() / "manifest.json").read_bytes())
+            self.assertEqual((interrupted[0], interrupted[1]["code"]), (1, "WRITE_FAILED"))
+            self.assertEqual((resumed[0], resumed[1]["code"]), (0, "INSTALLED"))
+            self.assertEqual(manifest["python_realpath"], new_python)
+            self.assertFalse((data_root / "runtime/.current.installing").exists())
+
+    def test_install_refuses_old_release_tamper_after_document_rename(self) -> None:
+        # Given: a binding refresh interrupted after the new document is installed but before current moves.
+        for tamper in ("manifest-json", "manifest-canonical", "artifact", "manifest-hardlink"):
+            with self.subTest(tamper=tamper), tempfile.TemporaryDirectory(prefix="mnemosyne-install-") as directory:
+                base = Path(directory)
+                home = private_home(base)
+                data_root = base / "data"
+                old_python = "/private/tmp/mnemosyne-python-3.14.6"
+                new_python = "/private/tmp/mnemosyne-python-3.14.7"
+                with patch("mnemosyne_capture.install_artifacts.sys_executable", return_value=old_python):
+                    invoke(["--home", str(home), "--data-root", str(data_root), "install"])
+                original_replace = os.replace
+
+                def interrupt_current_replace(source: Path, target: Path) -> None:
+                    if source.name == ".current.installing" and target.name == "current":
+                        raise OSError
+                    original_replace(source, target)
+
+                with patch("mnemosyne_capture.install_artifacts.sys_executable", return_value=new_python), \
+                     patch("mnemosyne_capture.install.os.replace", new=interrupt_current_replace):
+                    interrupted = invoke(["--home", str(home), "--data-root", str(data_root), "install"])
+
+                runtime = data_root / "runtime"
+                current = runtime / "current"
+                witness = runtime / ".current.installing"
+                old_target, pending_target = os.readlink(current), os.readlink(witness)
+                old_release = current.resolve()
+                manifest = old_release / "manifest.json"
+                if tamper == "manifest-json":
+                    manifest.write_bytes(b"{")
+                elif tamper == "manifest-canonical":
+                    manifest.write_bytes(json.dumps(json.loads(manifest.read_bytes()), indent=2).encode())
+                elif tamper == "artifact":
+                    (old_release / "mnemosyne.pyz").write_bytes(b"tampered-old-release")
+                else:
+                    os.link(manifest, base / "manifest-alias")
+                document = home / "Library/Services/Mnemosyne Capture.workflow/Contents/Resources/document.wflow"
+                before = document.read_bytes()
+                command = plistlib.loads(before)["actions"][0]["action"]["ActionParameters"]["COMMAND_STRING"]
+                self.assertIn(f"'{new_python}'", command)
+                tampered = manifest if tamper.startswith("manifest") else old_release / "mnemosyne.pyz"
+                tampered_bytes = tampered.read_bytes()
+
+                # When: the interrupted refresh resumes with a corrupted old release identity.
+                with patch("mnemosyne_capture.install_artifacts.sys_executable", return_value=new_python):
+                    refused = invoke(["--home", str(home), "--data-root", str(data_root), "install"])
+
+                # Then: old-release authentication refuses before promotion or any document overwrite.
+                self.assertEqual((interrupted[0], interrupted[1]["code"]), (1, "WRITE_FAILED"))
+                self.assertEqual((refused[0], refused[1]["code"], refused[1]["changed"]),
+                                 (1, "RUNTIME_TAMPERED", False))
+                self.assertEqual((os.readlink(current), os.readlink(witness)), (old_target, pending_target))
+                self.assertEqual(document.read_bytes(), before)
+                self.assertEqual(tampered.read_bytes(), tampered_bytes)
+
+    def test_install_refuses_same_target_witness_with_tampered_old_document(self) -> None:
+        # Given: a binding refresh paused with a valid new writer, then legacy residue points both links at it.
+        with tempfile.TemporaryDirectory(prefix="mnemosyne-install-") as directory:
+            base = Path(directory)
+            home = private_home(base)
+            data_root = base / "data"
+            old_python = "/private/tmp/mnemosyne-python-3.14.6"
+            new_python = "/private/tmp/mnemosyne-python-3.14.7"
+            with patch("mnemosyne_capture.install_artifacts.sys_executable", return_value=old_python):
+                invoke(["--home", str(home), "--data-root", str(data_root), "install"])
+            original_replace = os.replace
+
+            def interrupt_document_replace(source: Path, target: Path) -> None:
+                if source.name == "document.wflow.writing" and target.name == "document.wflow":
+                    raise OSError
+                original_replace(source, target)
+
+            with patch("mnemosyne_capture.install_artifacts.sys_executable", return_value=new_python), \
+                 patch("mnemosyne_capture.install.os.replace", new=interrupt_document_replace):
+                interrupted = invoke(["--home", str(home), "--data-root", str(data_root), "install"])
+
+            runtime = data_root / "runtime"
+            target = os.readlink(runtime / ".current.installing")
+            (runtime / "current").unlink()
+            (runtime / "current").symlink_to(target)
+            (runtime / ".current.installing").unlink()
+            (runtime / ".current.installing").symlink_to(target)
+            document = home / "Library/Services/Mnemosyne Capture.workflow/Contents/Resources/document.wflow"
+            document.write_bytes(b"tampered-old-document")
+
+            # When: install resumes with same-target current+witness residue and a valid new writer.
+            with patch("mnemosyne_capture.install_artifacts.sys_executable", return_value=new_python):
+                refused = invoke(["--home", str(home), "--data-root", str(data_root), "install"])
+
+            # Then: authentication fails before replacement and the tampered document remains unchanged.
+            self.assertEqual((interrupted[0], interrupted[1]["code"]), (1, "WRITE_FAILED"))
+            self.assertEqual((refused[0], refused[1]["code"], refused[1]["changed"]),
+                             (1, "RUNTIME_TAMPERED", False))
+            self.assertEqual(document.read_bytes(), b"tampered-old-document")
+
     def test_foreign_workflow_and_overlapping_root_fail_before_mutation(self) -> None:
         # Given: one home with a foreign reserved workflow and another with an overlapping data root.
         with tempfile.TemporaryDirectory(prefix="mnemosyne-install-") as directory:
@@ -142,6 +328,11 @@ class CaptureInstallTests(unittest.TestCase):
 
             # Then: native parsing succeeds and Info.plist has exactly the locked plistlib bytes.
             self.assertEqual(lint.returncode, 0, lint.stderr.decode("utf-8", "replace"))
+            source_document = plistlib.loads((source / "Resources/document.wflow").read_bytes())
+            source_command = source_document["actions"][0]["action"]["ActionParameters"]["COMMAND_STRING"]
+            expected_document = plistlib.dumps(workflow_plist(source_command), fmt=plistlib.FMT_XML, sort_keys=True)
+            self.assertEqual((source / "Resources/document.wflow").read_bytes(), expected_document)
+            self.assertEqual(source_document["workflowMetaData"]["serviceApplicationBundleID"], "com.google.Chrome")
             expected_info = {"CFBundleDevelopmentRegion": "en_US", "CFBundleIdentifier": "com.99duuk.mnemosyne.capture",
                              "CFBundleName": "Mnemosyne Capture", "CFBundleShortVersionString": "1.0",
                              "NSServices": [{"NSMenuItem": {"default": "Mnemosyne Capture"}, "NSMessage": "runWorkflowAsService"}]}

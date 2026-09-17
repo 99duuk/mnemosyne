@@ -211,7 +211,7 @@ def workflow_plist(command: str) -> dict:
             "ActionBundlePath": "/System/Library/Automator/Run Shell Script.action", "ActionName": "Run Shell Script",
             "ActionParameters": {"COMMAND_STRING": command, "CheckedForUserDefaultShell": True,
             "inputMethod": 1, "shell": "/bin/zsh"}}}], "workflowMetaData": {
-            "serviceApplicationBundleID": "com.apple.Safari", "serviceInputTypeIdentifier": "com.apple.Automator.nothing",
+            "serviceApplicationBundleID": "com.google.Chrome", "serviceInputTypeIdentifier": "com.apple.Automator.nothing",
             "serviceOutputTypeIdentifier": "com.apple.Automator.nothing", "serviceProcessesInput": 0,
             "workflowTypeIdentifier": "com.apple.Automator.servicesMenu"}}
 

@@ -51,7 +51,7 @@
 	<key>workflowMetaData</key>
 	<dict>
 		<key>serviceApplicationBundleID</key>
-		<string>com.apple.Safari</string>
+		<string>com.google.Chrome</string>
 		<key>serviceInputTypeIdentifier</key>
 		<string>com.apple.Automator.nothing</string>
 		<key>serviceOutputTypeIdentifier</key>
