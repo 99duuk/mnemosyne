@@ -6,16 +6,19 @@
 
 ## 현재 상태
 
-연구·정책 검토·아키텍처 설계·보고서 작성까지 완료됐다. 실제 대상 블로그 데이터 수집, ingestion pipeline, RAG 애플리케이션, 평가 하네스, LoRA 학습은 아직 구현하지 않았다.
+연구·정책 검토·아키텍처 설계·보고서 작성에 더해, macOS의 Google Chrome 서비스에서 사용자가 이미 연 현재 글 한 개를 저장하는 capture 도구가 구현돼 있다. 이 도구는 크롤러가 아니며, 실제 사용자·대상 데이터는 이 저장소에 포함하지 않는다.
+
+현재 구현은 제목·게시일·텍스트 본문을 Markdown·JSON·JSONL의 로컬 private store로 보존하는 경계까지만 다룬다. ingestion pipeline, RAG 애플리케이션, 평가 하네스, LoRA 학습, 미디어 수집, 서버 기능은 아직 구현하지 않았다.
 
 ## 이어서 읽는 순서
 
 1. [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) — 현재 완료·미완료 상태
-2. [`docs/DECISIONS.md`](docs/DECISIONS.md) — 확정한 결정과 금지 경계
-3. [`docs/NEXT_STEPS.md`](docs/NEXT_STEPS.md) — 다음 구현 순서
-4. [`research/2026-07-13/SYNTHESIS.md`](research/2026-07-13/SYNTHESIS.md) — 가장 완성도 높은 전체 연구
-5. [`research/2026-07-30/SYNTHESIS.md`](research/2026-07-30/SYNTHESIS.md) — 최신 정책 재확인 및 설계 갱신
-6. [`docs/CONVERSATION.md`](docs/CONVERSATION.md) — 현재 대화 전체 전사본
+2. [`docs/CAPTURE.md`](docs/CAPTURE.md) — Chrome 현재 글 저장기의 설치·권한·제한·문제 해결
+3. [`docs/DECISIONS.md`](docs/DECISIONS.md) — 확정한 결정과 금지 경계
+4. [`docs/NEXT_STEPS.md`](docs/NEXT_STEPS.md) — 다음 구현 순서
+5. [`research/2026-07-13/SYNTHESIS.md`](research/2026-07-13/SYNTHESIS.md) — 가장 완성도 높은 전체 연구
+6. [`research/2026-07-30/SYNTHESIS.md`](research/2026-07-30/SYNTHESIS.md) — 최신 정책 재확인 및 설계 갱신
+7. [`docs/CONVERSATION.md`](docs/CONVERSATION.md) — 현재 대화 전체 전사본
 
 ## 저장 구조
 
@@ -25,6 +28,7 @@ docs/
   CONVERSATION.jsonl     기계가 처리할 수 있는 메시지 단위 원문
   SESSION_META.json      세션·전사 범위 메타데이터
   PROJECT_STATUS.md      완료/미완료/현재 블로커
+  CAPTURE.md             Chrome 현재 글 저장기 사용 경계
   DECISIONS.md           핵심 결정
   NEXT_STEPS.md          다음 실행 순서
 research/
@@ -53,4 +57,3 @@ cd mnemosyne
 - 대화 전사본에는 사용자·어시스턴트에게 표시된 메시지만 포함한다.
 - 모르는 사람의 블로그를 자동 크롤링하거나 봇 탐지·정책을 우회하는 구현은 이 저장소의 승인 범위가 아니다.
 - 실제 데이터 연결 전 플랫폼 접근, 저작권, 개인정보, 정체성 공개 권한을 각각 확인한다.
-
