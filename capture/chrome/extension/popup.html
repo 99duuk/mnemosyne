@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="ko"><meta charset="utf-8"><title>Mnemosyne capture test</title>
+<style>body{width:330px;padding:16px;font:14px system-ui}button{margin:5px 0;padding:8px}input{width:95%;padding:6px}pre{white-space:pre-wrap;font-size:12px}</style>
+<h2>현재 탭 저장 테스트</h2>
+<p>선택한 글 수만큼 저장 · 30분 후 만료 · 원문은 이 브라우저에 로컬 저장</p>
+<label>블로그 ID <input id="blog" placeholder="대상 블로그 ID"></label>
+<label>최대 글 수 <input id="limit" type="number" min="1" max="50" value="2"></label>
+<button id="start">현재 글에서 시작</button>
+<button id="stop">중지</button>
+<button id="export">저장 자료 내보내기</button>
+<pre id="status">상태 확인 중</pre>
+<script src="popup.js"></script></html>
